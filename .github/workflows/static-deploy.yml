@@ -22,21 +22,17 @@ jobs:
             exit 1
           fi
 
-      # Upload the local static folder into the files/static path
-      - name: Upload static folder via SFTP
-        uses: appleboy/ssh-action@v0.1.7
-        with:
-            host: ${{ secrets.PANTHEON_SFTP_HOST }}
-            username: ${{ secrets.PANTHEON_SFTP_USERNAME }}
-            port: ${{ secrets.PANTHEON_SFTP_PORT }}
-            key: ${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}
-            script: |
-                # Create target folder if missing
-                mkdir -p /code/web/sites/default/files/static
-                
-                # Upload all files via sftp batch
-                sftp -o StrictHostKeyChecking=no <<EOF
-                put -r api-portal/static/* /code/web/sites/default/files/static/
-                EOF
+      - name: Upload static via lftp
+        run: |
+            echo "${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}" > /tmp/private_key
+            chmod 600 /tmp/private_key
+
+            lftp -u ${{ secrets.PANTHEON_SFTP_USERNAME }}, -e "
+            set sftp:connect-program 'ssh -a -x -i /tmp/private_key -o StrictHostKeyChecking=no -p ${{ secrets.PANTHEON_SFTP_PORT }}'
+            mirror -R api-portal/static /code/web/sites/default/files/static
+            quit
+            " sftp://${{ secrets.PANTHEON_SFTP_HOST }}
 
 
+
+ 
