@@ -22,16 +22,21 @@ jobs:
             exit 1
           fi
 
-      # Optional: Clean remote static folder first
       - name: Clean existing static folder on Pantheon
         uses: appleboy/ssh-action@v0.1.7
         with:
-          host: ${{ secrets.PANTHEON_SFTP_HOST }}
-          username: ${{ secrets.PANTHEON_SFTP_USERNAME }}
-          port: ${{ secrets.PANTHEON_SFTP_PORT }}
-          key: ${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}
-          script: |
-            rm -rf /code/web/sites/default/files/static
+            host: ${{ secrets.PANTHEON_SFTP_HOST }}
+            username: ${{ secrets.PANTHEON_SFTP_USERNAME }}
+            port: ${{ secrets.PANTHEON_SFTP_PORT }}
+            key: ${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}
+            script: |
+                if [ -d "/web/sites/default/files/static" ]; then
+                    rm -rf /web/sites/default/files/static
+                    echo "Static folder deleted successfully."
+                else
+                    echo "Static folder does not exist. Skipping delete."
+                fi
+
 
       # Upload the local static folder into the files/static path
       - name: Upload static folder to Pantheon
@@ -42,4 +47,4 @@ jobs:
           port: ${{ secrets.PANTHEON_SFTP_PORT }}
           key: ${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}
           source: "api-portal/static"
-          target: "/code/web/sites/default/files/"
+          target: "/web/sites/default/files/"
