@@ -23,12 +23,14 @@ jobs:
           fi
 
       # Upload the local static folder into the files/static path
-      - name: Upload static folder to Pantheon
-        uses: appleboy/scp-action@v0.1.7
+      - name: Upload static folder to Pantheon via SFTP
+        uses: appleboy/sftp-action@v0.1.7
         with:
-          host: ${{ secrets.PANTHEON_SFTP_HOST }}
-          username: ${{ secrets.PANTHEON_SFTP_USERNAME }}
-          port: ${{ secrets.PANTHEON_SFTP_PORT }}
-          key: ${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}
-          source: "api-portal/static"
-          target: "/code/web/sites/default/files/"
+            host: ${{ secrets.PANTHEON_SFTP_HOST }}
+            username: ${{ secrets.PANTHEON_SFTP_USERNAME }}
+            port: ${{ secrets.PANTHEON_SFTP_PORT }}
+            key: ${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}
+            source: "api-portal/static"
+            target: "/code/web/sites/default/files/static"
+            overwrite: true
+
