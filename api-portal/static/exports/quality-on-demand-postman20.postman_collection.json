@@ -1,0 +1,914 @@
+{
+  "info": {
+    "name": "Quality-On-Demand",
+    "_postman_id": "895e4c47-3e70-42ff-b023-0831e958d044",
+    "description": "The Quality-On-Demand (QoD) API provides a programmable interface for developers and other users (API consumers) to request stable latency or throughput managed by networks without the necessity to have an in-depth knowledge of the underlying network complexity (e.g. the 4G/5G system in case of a mobile network).\n\n# Introduction\n\nIndustrial (IoT), VR/Gaming, live video streaming, autonomous driving and many other scenarios demand network communication quality and are sensitive to any change in transmission conditions. Being able to request a stable latency (reduced jitter) or prioritized throughput from the network can improve user experience substantially.\n\nThe QoD API offers the application developers the capability to request for stable latency (reduced jitter) or throughput for some specified application data flows between application clients (within a user device) and application servers (backend services). The developer has a pre-defined set of Quality of Service (QoS) profiles which they could choose from depending on their latency or throughput requirements.\n\n![QoD API Overview](https://raw.githubusercontent.com/camaraproject/QualityOnDemand/main/documentation/API_documentation/resources/QoD_latency_overview.PNG)\n\nThe usage of the API is based on QoS session resources, which can be created (based on available QoS profiles), queried and deleted. The deletion of a requested session can be triggered by the API consumer or can be triggered automatically once the QoS session has reached its limit.\n\n# Relevant terms and definitions\n\n* **QOD service endpoint**:\nThe URL pointing to the RESTful resource of the QoD API.\n\n* **Authentication**:\nSecurity access keys such as OAuth 2.0 client credentials used by client applications to invoke the QoD API.\n\n* **QoS profiles**:\nLatency, throughput or priority requirements of the application mapped to relevant QoS profile values. The set of QoS Profiles that an API provider is offering may be retrieved via the `qos-profiles` API (cf. https://github.com/camaraproject/QualityOnDemand/) or will be agreed during the onboarding with the API provider.\n\n* **Identifier for the device**:\nAt least one identifier for the device (user equipment) out of four options: IPv4 address, IPv6 address, Phone number, or Network Access Identifier assigned by the mobile network operator for the device. Note: Network Access Identifier is defined for future use and will not be supported with this version of the API.\n\n* **Identifier for the application server**:\nIPv4 and/or IPv6 address of the application server (application backend)\n\n* **App-Flow (between the application client and application server)**:\nThe precise application data flow the developer wants to prioritize and have stable latency or throughput for. This flow is in the current API version determined by the identified device and the application server. And it can be further elaborated with details such as ports or port-ranges. Future version of the API might allow more detailed flow identification features.\n\n* **Duration**:\nDuration (in seconds) for which the QoS session (between application client and application server) should be created. Limits for session duration can be set by the implementation for the QoS profile. The user may request a termination before its expiration.\n\n * **Notification URL and token**:\nThe API consumer may provide a callback URL (`sink`) on which notifications about all status change events (eg. provisioning termination) can be received from the API provider. This is an optional parameter. The notification will be sent as a CloudEvent compliant message.\nIf `sink` is included, it is RECOMMENDED for the client to provide as well the `sinkCredential` property to protect the notification endpoint. In the current version, `sinkCredential.credentialType` MUST be set to `ACCESSTOKEN` if provided.\n\n# API functionality\n\nThe usage of the QoD API is based on QoS profile classes and parameters which define App-Flows.\nBased on the API, QoS session resources can be created, queried, and deleted. Once an offered QoS profile class is requested, application users get a prioritized service with stable latency or throughput even in the case of congestion. The QoD API has the following characteristics:\n\n* A specified App-Flow is prioritized to ensure stable latency or throughput for that flow.\n* The prioritized App-Flow is described by providing information such as device IP address (or other device identifier) & application server IP addresses and port/port-ranges.\n* The developer specifies the duration for which they need the prioritized App-flow.\n* Stable latency or throughput is requested by selecting from the list of QoS profiles made available by the service provider (e.g. QOS_E) to map latency and throughput requirements.\n* The API consumer can optionally also specify callback URL (`sink` param) on which notifications for the session can be sent. <br>\n\nFollowing diagram shows the interaction between different components\n\n![QoD Management API](https://raw.githubusercontent.com/camaraproject/QualityOnDemand/main/documentation/API_documentation/resources/QoD_details.PNG)\n\n# Authorization and authentication\n\nThe \"Camara Security and Interoperability Profile\" provides details of how an API consumer requests an access token. Please refer to Identity and Consent Management (https://github.com/camaraproject/IdentityAndConsentManagement/) for the released version of the profile.\n\nThe specific authorization flows to be used will be agreed upon during the onboarding process, happening between the API consumer and the API provider, taking into account the declared purpose for accessing the API, whilst also being subject to the prevailing legal framework dictated by local legislation.\n\nIn cases where personal data is processed by the API and users can exercise their rights through mechanisms such as opt-in and/or opt-out, the use of three-legged access tokens is mandatory. This ensures that the API remains in compliance with privacy regulations, upholding the principles of transparency and user-centric privacy-by-design.\n\n# Identifying the device from the access token\n\nThis API requires the API consumer to identify a device as the subject of the API as follows:\n- When the API is invoked using a two-legged access token, the subject will be identified from the optional `device` object, which therefore MUST be provided.\n\n- When a three-legged access token is used however, this optional identifier MUST NOT be provided, as the subject will be uniquely identified from the access token.\n\nThis approach simplifies API usage for API consumers using a three-legged access token to invoke the API by relying on the information that is associated with the access token and was identified during the authentication process.\n\n## Error handling:\n- If the subject cannot be identified from the access token and the optional `device` object is not included in the request, then the server will return an error with the `422 MISSING_IDENTIFIER` error code.\n\n- If the subject can be identified from the access token and the optional `device` object is also included in the request, then the server will return an error with the `422 UNNECESSARY_IDENTIFIER` error code. This will be the case even if the same device is identified by these two methods, as the server is unable to make this comparison.\n\n- If the requested `qosProfile` exists but is currently not available for creating a session (e.g., its status is INACTIVE or DEPRECATED), then the server will return an error with the `422 QUALITY_ON_DEMAND.QOS_PROFILE_NOT_APPLICABLE` error code.\n\n# Multi-SIM scenario handling\n\nIn multi-SIM scenarios where more than one mobile device is associated with a phone number (e.g. a smartphone with an associated smartwatch), it might not be possible to uniquely identify the device to which the enhanced QoS profile should apply from that phone number. If the phone number is used as the device identifier when creating a QoS session in a multi-SIM scenario, the API may respond with an error, apply the enhanced QoS profile to all devices in the multi-SIM group, or apply the enhanced QoS profile to a single device in the multi-SIM group which may not be the intended device.\n\nPossible solutions in such a scenario include:\n- Using the authorisation code flow to obtain an access token, which will automatically identify the intended device\n- Identifying the intended device from a unique identifier for that device, such as its source IP address and port\n- Check with the SIM provider whether a unique \"secondary\" phone number is already associated with each device, and use the secondary phone number to identify the intended device if available\n\n# Further info and support\n\n(FAQs will be added in a later version of the documentation)\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "QoS Sessions",
+      "description": "Manage QoS sessions",
+      "item": [
+        {
+          "id": "0d0e81fb-e2ac-403b-979a-9ed9814b4390",
+          "name": "createSession",
+          "request": {
+            "url": {
+              "host": "{{default}}",
+              "path": [
+                "sessions"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": {
+                "token": "<<token>>",
+                "scope": "quality-on-demand:sessions:create"
+              }
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "description": "",
+                "disabled": false
+              },
+              {
+                "key": "x-correlator",
+                "value": "b4333c46-49c0-4f62-80d7-f0ef930f1c46",
+                "description": "Correlation id for the different services",
+                "disabled": false
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "disabled": false
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"applicationServer\": {\n    \"ipv4Address\": \"198.51.100.0/24\",\n    \"ipv6Address\": \"2001:db8:85a3:8d3:1319:8a2e:370:7344\"\n  },\n  \"qosProfile\": \"voice\",\n  \"duration\": 3600,\n  \"device\": {\n    \"phoneNumber\": \"+123456789\",\n    \"networkAccessIdentifier\": \"123456789@domain.com\",\n    \"ipv4Address\": {\n      \"publicAddress\": \"203.0.113.0\",\n      \"privateAddress\": \"203.0.113.0\",\n      \"publicPort\": 5942\n    },\n    \"ipv6Address\": \"2001:db8:85a3:8d3:1319:8a2e:370:7344\"\n  },\n  \"devicePorts\": {\n    \"ranges\": [\n      {\n        \"from\": 55713,\n        \"to\": 35342\n      }\n    ],\n    \"ports\": [\n      60871\n    ]\n  },\n  \"applicationServerPorts\": {\n    \"ranges\": [\n      {\n        \"from\": 55713,\n        \"to\": 35342\n      }\n    ],\n    \"ports\": [\n      60871\n    ]\n  },\n  \"sink\": \"https://endpoint.example.com/sink\",\n  \"sinkCredential\": {\n    \"credentialType\": \"credentialType81\"\n  }\n}",
+              "disabled": false
+            },
+            "description": "Create QoS Session to manage latency/throughput priorities\n\nIf the qosStatus in the API response is \"AVAILABLE\" and a notification callback is provided the API consumer will receive in addition to the response a\n`QOS_STATUS_CHANGED` event notification with `qosStatus` as `AVAILABLE`.\n\nIf the `qosStatus` in the API response is `REQUESTED`, the client will receive either\n- a `QOS_STATUS_CHANGED` event notification with `qosStatus` as `AVAILABLE` after the network notifies that it has created the requested session, or\n- a `QOS_STATUS_CHANGED` event notification with `qosStatus` as `UNAVAILABLE` and `statusInfo` as `NETWORK_TERMINATED` after the network notifies that it has failed to provide the requested session.\n\nA `QOS_STATUS_CHANGED` event notification with `qosStatus` as `UNAVAILABLE` will also be send if the network terminates the session before the requested duration expired\n\n**NOTES:**\n- In case of a `QOS_STATUS_CHANGED` event with `qosStatus` as `UNAVAILABLE` and `statusInfo` as `NETWORK_TERMINATED` the resources of the QoS session are not directly released, but will get deleted automatically at earliest 360 seconds after the event.\n\n  This behavior allows API consumers which are not receiving notification events but are polling to get the session information with the `qosStatus` `UNAVAILABLE` and `statusInfo` `NETWORK_TERMINATED`. Before a API consumer can attempt to create a new QoD session for the same device and flow period they must release the session resources with an explicit `delete` operation if not yet automatically deleted.\n- The access token may be either 2-legged or 3-legged. See \"Identifying the device from the access token\" for further information\n  - When the API is invoked using a two-legged access token, the subject will be identified from the optional `device` object, which therefore MUST be provided.\n  - When a three-legged access token is used however, this optional identifier MUST NOT be provided, as the subject will be uniquely identified from the access token.\n"
+          },
+          "response": [
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"applicationServer\": {\n    \"ipv4Address\": \"198.51.100.0/24\",\n    \"ipv6Address\": \"2001:db8:85a3:8d3:1319:8a2e:370:7344\"\n  },\n  \"qosProfile\": \"voice\",\n  \"sessionId\": \"394f6945-a854-493c-a363-1f4e387c3cd8\",\n  \"duration\": 3600,\n  \"qosStatus\": \"REQUESTED\",\n  \"device\": {\n    \"phoneNumber\": \"+123456789\",\n    \"networkAccessIdentifier\": \"123456789@domain.com\",\n    \"ipv4Address\": {\n      \"publicAddress\": \"203.0.113.0\",\n      \"privateAddress\": \"203.0.113.0\",\n      \"publicPort\": 1718\n    },\n    \"ipv6Address\": \"2001:db8:85a3:8d3:1319:8a2e:370:7344\"\n  },\n  \"devicePorts\": {\n    \"ranges\": [\n      {\n        \"from\": 1362,\n        \"to\": 23110\n      }\n    ],\n    \"ports\": [\n      10260\n    ]\n  },\n  \"applicationServerPorts\": {\n    \"ranges\": [\n      {\n        \"from\": 1362,\n        \"to\": 23110\n      }\n    ],\n    \"ports\": [\n      10260\n    ]\n  },\n  \"sink\": \"https://endpoint.example.com/sink\",\n  \"sinkCredential\": {\n    \"credentialType\": \"credentialType72\"\n  },\n  \"startedAt\": \"2024-06-01T12:00:00Z\",\n  \"expiresAt\": \"2024-06-01T13:00:00Z\",\n  \"statusInfo\": \"NETWORK_TERMINATED\"\n}",
+              "status": "Session created",
+              "code": 201,
+              "name": "Response_201",
+              "id": "bdc43643-5aee-4183-9193-e425b9184aa4"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 400,\n  \"code\": \"INVALID_ARGUMENT\",\n  \"message\": \"Client specified an invalid argument, request body or query param.\"\n}",
+              "status": "Bad Request when creating a session",
+              "code": 400,
+              "name": "Response_400",
+              "id": "017b8fb5-fcf9-42c0-924b-9f18a08d77e9"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 401,\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required.\"\n}",
+              "status": "Unauthorized",
+              "code": 401,
+              "name": "Response_401",
+              "id": "2a345a85-241b-4d16-9f14-0e65d0544882"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 401,\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"message60\"\n}",
+              "status": "Forbidden",
+              "code": 403,
+              "name": "Response_403",
+              "id": "ff9216c3-654b-40f7-b088-571ddaa31f23"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 404,\n  \"code\": \"NOT_FOUND\",\n  \"message\": \"The specified resource is not found.\"\n}",
+              "status": "Not found",
+              "code": 404,
+              "name": "Response_404",
+              "id": "cb4843cc-5c43-4bdd-867f-54f4e2bc69c3"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 409,\n  \"code\": \"CONFLICT\",\n  \"message\": \"Conflict with an existing session for the same device.\"\n}",
+              "status": "Conflict",
+              "code": 409,
+              "name": "Response_409",
+              "id": "7f938cf1-1e39-450d-97a3-be7dc388be62"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 422,\n  \"code\": \"IDENTIFIER_MISMATCH\",\n  \"message\": \"Provided identifiers are not consistent.\"\n}",
+              "status": "Unprocessable Content",
+              "code": 422,
+              "name": "Response_422",
+              "id": "51d6c5be-f166-4060-a320-e2e34de966a6"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 429,\n  \"code\": \"QUOTA_EXCEEDED\",\n  \"message\": \"Out of resource quota.\"\n}",
+              "status": "Too Many Requests",
+              "code": 429,
+              "name": "Response_429",
+              "id": "45342b3a-8cf0-4c2e-a695-3c42b7aa6d46"
+            }
+          ]
+        },
+        {
+          "id": "64fbb5bb-fd1a-421f-8941-c95a49a04924",
+          "name": "getSession",
+          "request": {
+            "url": {
+              "host": "{{default}}",
+              "path": [
+                "sessions/:sessionId"
+              ],
+              "variable": [
+                {
+                  "id": "sessionId",
+                  "key": "sessionId",
+                  "value": "ae447c5c-54cc-49f1-9a88-908d4a4e2a97",
+                  "type": "string",
+                  "description": "Session ID that was obtained from the createSession operation"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": {
+                "token": "<<token>>",
+                "scope": "quality-on-demand:sessions:read"
+              }
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-correlator",
+                "value": "b4333c46-49c0-4f62-80d7-f0ef930f1c46",
+                "description": "Correlation id for the different services",
+                "disabled": false
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "disabled": false
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "disabled": false
+            },
+            "description": "Querying for QoS session resource information details\n\n**NOTES:**\n- The access token may be either 2-legged or 3-legged.\n- If a 3-legged access token is used, the end user (and device) associated with the session must also be associated with the access token.\n- The session must have been created by the same API client given in the access token\n"
+          },
+          "response": [
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"duration\": 3600,\n  \"device\": {\n    \"ipv4Address\": {\n      \"publicAddress\": \"203.0.113.0\",\n      \"publicPort\": 59765\n    }\n  },\n  \"applicationServer\": {\n    \"ipv4Address\": \"198.51.100.0/24\"\n  },\n  \"qosProfile\": \"QOS_L\",\n  \"sink\": \"https://application-server.com/notifications\",\n  \"sessionId\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n  \"startedAt\": \"2024-06-01T12:00:00Z\",\n  \"expiresAt\": \"2024-06-01T13:00:00Z\",\n  \"qosStatus\": \"AVAILABLE\"\n}",
+              "status": "Contains information about active session",
+              "code": 200,
+              "name": "Response_200",
+              "id": "6667a20e-af8b-4f76-b575-cd818eb1d308"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 400,\n  \"code\": \"INVALID_ARGUMENT\",\n  \"message\": \"Client specified an invalid argument, request body or query param.\"\n}",
+              "status": "Bad Request",
+              "code": 400,
+              "name": "Response_400",
+              "id": "fdc8da1a-d820-4f87-906d-3ad32fc5230d"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 401,\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required.\"\n}",
+              "status": "Unauthorized",
+              "code": 401,
+              "name": "Response_401",
+              "id": "e48affb0-6ff4-44a8-b53f-097f5cdad857"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 401,\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"message60\"\n}",
+              "status": "Forbidden",
+              "code": 403,
+              "name": "Response_403",
+              "id": "5d0df692-d290-449e-b400-3fed8350ff89"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 401,\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"message60\"\n}",
+              "status": "Not found",
+              "code": 404,
+              "name": "Response_404",
+              "id": "a6a699b3-c900-4d97-b57a-2df27258c5fe"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 429,\n  \"code\": \"QUOTA_EXCEEDED\",\n  \"message\": \"Out of resource quota.\"\n}",
+              "status": "Too Many Requests",
+              "code": 429,
+              "name": "Response_429",
+              "id": "781b0f42-dff3-4a93-9812-b75d93b25edd"
+            }
+          ]
+        },
+        {
+          "id": "015da313-5873-4791-867b-225d9b5bbc10",
+          "name": "deleteSession",
+          "request": {
+            "url": {
+              "host": "{{default}}",
+              "path": [
+                "sessions/:sessionId"
+              ],
+              "variable": [
+                {
+                  "id": "sessionId",
+                  "key": "sessionId",
+                  "value": "a861de25-6870-4690-aa81-3c22294d47af",
+                  "type": "string",
+                  "description": "Session ID that was obtained from the createSession operation"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": {
+                "token": "<<token>>",
+                "scope": "quality-on-demand:sessions:delete"
+              }
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-correlator",
+                "value": "b4333c46-49c0-4f62-80d7-f0ef930f1c46",
+                "description": "Correlation id for the different services",
+                "disabled": false
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "disabled": false
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "disabled": false
+            },
+            "description": "Release resources related to QoS session\n\nIf the notification callback is provided and the `qosStatus` of the session was `AVAILABLE` the client will receive in addition to the response a `QOS_STATUS_CHANGED` event with\n- `qosStatus` as `UNAVAILABLE` and\n- `statusInfo` as `DELETE_REQUESTED`\nThere will be no notification event if the `qosStatus` was already `UNAVAILABLE`.\n\n**NOTES:**\n- The access token may be either 2-legged or 3-legged.\n- If a 3-legged access token is used, the subject associated with the session must also be associated with the access token.\n- The session must must have been created by the same API consumer given in the access token\n"
+          },
+          "response": [
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                }
+              ],
+              "status": "Session deleted",
+              "code": 204,
+              "name": "Response_204",
+              "id": "7d499b6b-416a-44ac-abcc-13bb0993a14b"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 400,\n  \"code\": \"INVALID_ARGUMENT\",\n  \"message\": \"Client specified an invalid argument, request body or query param.\"\n}",
+              "status": "Bad Request",
+              "code": 400,
+              "name": "Response_400",
+              "id": "34af5891-b840-44ed-aeff-6ea9f9be2a2f"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 401,\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required.\"\n}",
+              "status": "Unauthorized",
+              "code": 401,
+              "name": "Response_401",
+              "id": "3a658419-2153-4c2e-8d7a-6dad3e202c96"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 401,\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"message60\"\n}",
+              "status": "Forbidden",
+              "code": 403,
+              "name": "Response_403",
+              "id": "22335ff3-bfdc-441d-851a-8734e9389a94"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 401,\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"message60\"\n}",
+              "status": "Not found",
+              "code": 404,
+              "name": "Response_404",
+              "id": "75661025-9280-4963-8eff-2065430473e1"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 429,\n  \"code\": \"QUOTA_EXCEEDED\",\n  \"message\": \"Out of resource quota.\"\n}",
+              "status": "Too Many Requests",
+              "code": 429,
+              "name": "Response_429",
+              "id": "f19e8500-00b9-4c54-b051-98b6668cc8d3"
+            }
+          ]
+        },
+        {
+          "id": "ba4fc729-9fd3-4395-ba24-19799a9f7219",
+          "name": "extendQosSessionDuration",
+          "request": {
+            "url": {
+              "host": "{{default}}",
+              "path": [
+                "sessions/:sessionId/extend"
+              ],
+              "variable": [
+                {
+                  "id": "sessionId",
+                  "key": "sessionId",
+                  "value": "b7ea15b4-8eee-4024-b3aa-f887a682304b",
+                  "type": "string",
+                  "description": "Session ID that was obtained from the createSession operation"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": {
+                "token": "<<token>>",
+                "scope": "quality-on-demand:sessions:update"
+              }
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "description": "",
+                "disabled": false
+              },
+              {
+                "key": "x-correlator",
+                "value": "b4333c46-49c0-4f62-80d7-f0ef930f1c46",
+                "description": "Correlation id for the different services",
+                "disabled": false
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "disabled": false
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestedAdditionalDuration\": 1800\n}",
+              "disabled": false
+            },
+            "description": "Extend the overall session duration of an active QoS session (with qosStatus = AVAILABLE).\nThe overall duration of the QoS session, including the additional extended duration, shall not exceed the maximum duration limit fixed for the QoS Profile. If the current duration plus the value of `requestedAdditionalDuration` exceeds the maximum limit, the new overall duration shall be capped to the maximum value allowed.\nAn example: For a QoS profile limited to a `maxDuration` of 50,000 seconds, a QoD session was originally created with duration 30,000 seconds. Before the session expires, the developer requests to extend the session by another 30,000 seconds:\n- Previous duration: 30,000 seconds\n- Requested additional duration: 30,000 seconds\n- New overall session duration: 50,000 seconds (the maximum allowed)\n\n**NOTES:**\n- The access token may be either 2-legged or 3-legged.\n- If a 3-legged access token is used, the subject associated with the session must also be associated with the access token.\n- The session must must have been created by the same API consumer given in the access token\n"
+          },
+          "response": [
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"applicationServer\": {\n    \"ipv4Address\": \"198.51.100.0/24\",\n    \"ipv6Address\": \"2001:db8:85a3:8d3:1319:8a2e:370:7344\"\n  },\n  \"qosProfile\": \"voice\",\n  \"sessionId\": \"394f6945-a854-493c-a363-1f4e387c3cd8\",\n  \"duration\": 3600,\n  \"qosStatus\": \"REQUESTED\",\n  \"device\": {\n    \"phoneNumber\": \"+123456789\",\n    \"networkAccessIdentifier\": \"123456789@domain.com\",\n    \"ipv4Address\": {\n      \"publicAddress\": \"203.0.113.0\",\n      \"privateAddress\": \"203.0.113.0\",\n      \"publicPort\": 1718\n    },\n    \"ipv6Address\": \"2001:db8:85a3:8d3:1319:8a2e:370:7344\"\n  },\n  \"devicePorts\": {\n    \"ranges\": [\n      {\n        \"from\": 1362,\n        \"to\": 23110\n      }\n    ],\n    \"ports\": [\n      10260\n    ]\n  },\n  \"applicationServerPorts\": {\n    \"ranges\": [\n      {\n        \"from\": 1362,\n        \"to\": 23110\n      }\n    ],\n    \"ports\": [\n      10260\n    ]\n  },\n  \"sink\": \"https://endpoint.example.com/sink\",\n  \"sinkCredential\": {\n    \"credentialType\": \"credentialType72\"\n  },\n  \"startedAt\": \"2024-06-01T12:00:00Z\",\n  \"expiresAt\": \"2024-06-01T13:00:00Z\",\n  \"statusInfo\": \"NETWORK_TERMINATED\"\n}",
+              "status": "Contains information about active session",
+              "code": 200,
+              "name": "Response_200",
+              "id": "ba18cff8-ca25-4139-bb9d-a4c8c1082e2c"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 400,\n  \"code\": \"INVALID_ARGUMENT\",\n  \"message\": \"Client specified an invalid argument, request body or query param.\"\n}",
+              "status": "Bad Request",
+              "code": 400,
+              "name": "Response_400",
+              "id": "a9c6387e-9370-40dd-929c-86cd35e6d8bc"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 401,\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required.\"\n}",
+              "status": "Unauthorized",
+              "code": 401,
+              "name": "Response_401",
+              "id": "dc5cbd2d-2109-4b26-893b-453b5ef8af04"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 401,\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"message60\"\n}",
+              "status": "Forbidden",
+              "code": 403,
+              "name": "Response_403",
+              "id": "9cb12ee9-92c5-43ab-b1b9-43419c3bdc83"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 401,\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"message60\"\n}",
+              "status": "Not found",
+              "code": 404,
+              "name": "Response_404",
+              "id": "5f83691c-d1f1-448c-acec-2ef58e5258fa"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 409,\n  \"code\": \"QUALITY_ON_DEMAND.SESSION_EXTENSION_NOT_ALLOWED\",\n  \"message\": \"Extending the session duration is not allowed in the current state ({qosStatus}). The session must be in the AVAILABLE state.\"\n}",
+              "status": "Conflict",
+              "code": 409,
+              "name": "Response_409",
+              "id": "863d103b-a484-4bb3-a1f0-f92d8ea424d8"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 429,\n  \"code\": \"QUOTA_EXCEEDED\",\n  \"message\": \"Out of resource quota.\"\n}",
+              "status": "Too Many Requests",
+              "code": 429,
+              "name": "Response_429",
+              "id": "1e6e668e-e3e4-4241-a810-98f5e501215b"
+            }
+          ]
+        },
+        {
+          "id": "6958e780-f1c3-4852-b6b4-d448fe1a0bce",
+          "name": "retrieveSessionsByDevice",
+          "request": {
+            "url": {
+              "host": "{{default}}",
+              "path": [
+                "retrieve-sessions"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": {
+                "token": "<<token>>",
+                "scope": "quality-on-demand:sessions:retrieve-by-device"
+              }
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "description": "",
+                "disabled": false
+              },
+              {
+                "key": "x-correlator",
+                "value": "b4333c46-49c0-4f62-80d7-f0ef930f1c46",
+                "description": "Correlation id for the different services",
+                "disabled": false
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "disabled": false
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device\": {\n    \"phoneNumber\": \"+123456789\",\n    \"networkAccessIdentifier\": \"123456789@domain.com\",\n    \"ipv4Address\": {\n      \"publicAddress\": \"203.0.113.0\",\n      \"privateAddress\": \"203.0.113.0\",\n      \"publicPort\": 5942\n    },\n    \"ipv6Address\": \"2001:db8:85a3:8d3:1319:8a2e:370:7344\"\n  }\n}",
+              "disabled": false
+            },
+            "description": "Querying for QoS session resource information details for a device\n\n**NOTES:**\n- The access token may be either 2-legged or 3-legged.\n  - If a 3-legged access token is used, the subject associated with the session must also be associated with the access token. In this case the optional `device` parameter MUST NOT be provided in the request.\n  - If a 2-legged access token is used, the device parameter must be provided and identify a device.\n- The session must have been created by the same API consumer given in the access token\n- If no QoS session is found for the requested device, an empty array is returned.\n- This call uses the POST method instead of GET to comply with the CAMARA Commonalities guidelines for sending sensitive or complex data in API calls. Since the device field may contain personally identifiable information, it should not be sent via GET.\n  [CAMARA API Design Guidelines](https://github.com/camaraproject/Commonalities/blob/r2.3/documentation/API-design-guidelines.md#post-or-get-for-transferring-sensitive-or-complex-data)\n"
+          },
+          "response": [
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "[\n  {\n    \"duration\": 3600,\n    \"device\": {\n      \"phoneNumber\": \"+123456789\"\n    },\n    \"applicationServer\": {\n      \"ipv4Address\": \"0.0.0.0/0\"\n    },\n    \"qosProfile\": \"QOS_L\",\n    \"sink\": \"https://application-server.com/notifications\",\n    \"sessionId\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n    \"startedAt\": \"2024-06-01T12:00:00Z\",\n    \"expiresAt\": \"2024-06-01T13:00:00Z\",\n    \"qosStatus\": \"AVAILABLE\"\n  }\n]",
+              "status": "Returns the QoS sessions information for a given device. A device may have multiple sessions, thus the response is an array. An empty array is returned if no sessions are found.",
+              "code": 200,
+              "name": "Response_200",
+              "id": "2c286c41-8ebf-4b42-ae33-35b47ffbd490"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 400,\n  \"code\": \"INVALID_ARGUMENT\",\n  \"message\": \"Client specified an invalid argument, request body or query param.\"\n}",
+              "status": "Bad Request",
+              "code": 400,
+              "name": "Response_400",
+              "id": "baaf2d20-520e-4897-bbea-2bf84854349d"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 401,\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required.\"\n}",
+              "status": "Unauthorized",
+              "code": 401,
+              "name": "Response_401",
+              "id": "9c5b0dfd-fb86-486a-91fe-6a272e6a259f"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 401,\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"message60\"\n}",
+              "status": "Forbidden",
+              "code": 403,
+              "name": "Response_403",
+              "id": "c5842b0c-5444-4283-bbdf-45f4be30499b"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 404,\n  \"code\": \"NOT_FOUND\",\n  \"message\": \"The specified resource is not found.\"\n}",
+              "status": "Not found",
+              "code": 404,
+              "name": "Response_404",
+              "id": "69780caa-6f02-42a8-ba62-2c387bba4924"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 422,\n  \"code\": \"IDENTIFIER_MISMATCH\",\n  \"message\": \"Provided identifiers are not consistent.\"\n}",
+              "status": "Unprocessable Content",
+              "code": 422,
+              "name": "Response_422",
+              "id": "f2251584-0b08-4c13-88c6-16674f001514"
+            },
+            {
+              "header": [
+                {
+                  "key": "x-correlator",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                  "disabled": false
+                }
+              ],
+              "body": "{\n  \"status\": 429,\n  \"code\": \"QUOTA_EXCEEDED\",\n  \"message\": \"Out of resource quota.\"\n}",
+              "status": "Too Many Requests",
+              "code": 429,
+              "name": "Response_429",
+              "id": "ff86db67-3f92-4f5c-8a8f-e513f78319e3"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "default",
+      "value": "http://localhost:9091/quality-on-demand/vwip"
+    },
+    {
+      "key": "auth server",
+      "value": "https://example.com/.well-known"
+    }
+  ]
+}

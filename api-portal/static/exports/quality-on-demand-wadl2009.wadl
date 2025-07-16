@@ -1,0 +1,1752 @@
+<?xml version="1.0" encoding="utf-8"?>
+<application xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:schemas="http://localhost:9091/quality-on-demand/vwip/schemas" xmlns="http://wadl.dev.java.net/2009/02">
+  <doc title="Quality-On-Demand" xml:lang="en">The Quality-On-Demand (QoD) API provides a programmable interface for developers and other users (API consumers) to request stable latency or throughput managed by networks without the necessity to have an in-depth knowledge of the underlying network complexity (e.g. the 4G/5G system in case of a mobile network).
+
+# Introduction
+
+Industrial (IoT), VR/Gaming, live video streaming, autonomous driving and many other scenarios demand network communication quality and are sensitive to any change in transmission conditions. Being able to request a stable latency (reduced jitter) or prioritized throughput from the network can improve user experience substantially.
+
+The QoD API offers the application developers the capability to request for stable latency (reduced jitter) or throughput for some specified application data flows between application clients (within a user device) and application servers (backend services). The developer has a pre-defined set of Quality of Service (QoS) profiles which they could choose from depending on their latency or throughput requirements.
+
+![QoD API Overview](https://raw.githubusercontent.com/camaraproject/QualityOnDemand/main/documentation/API_documentation/resources/QoD_latency_overview.PNG)
+
+The usage of the API is based on QoS session resources, which can be created (based on available QoS profiles), queried and deleted. The deletion of a requested session can be triggered by the API consumer or can be triggered automatically once the QoS session has reached its limit.
+
+# Relevant terms and definitions
+
+* **QOD service endpoint**:
+The URL pointing to the RESTful resource of the QoD API.
+
+* **Authentication**:
+Security access keys such as OAuth 2.0 client credentials used by client applications to invoke the QoD API.
+
+* **QoS profiles**:
+Latency, throughput or priority requirements of the application mapped to relevant QoS profile values. The set of QoS Profiles that an API provider is offering may be retrieved via the `qos-profiles` API (cf. https://github.com/camaraproject/QualityOnDemand/) or will be agreed during the onboarding with the API provider.
+
+* **Identifier for the device**:
+At least one identifier for the device (user equipment) out of four options: IPv4 address, IPv6 address, Phone number, or Network Access Identifier assigned by the mobile network operator for the device. Note: Network Access Identifier is defined for future use and will not be supported with this version of the API.
+
+* **Identifier for the application server**:
+IPv4 and/or IPv6 address of the application server (application backend)
+
+* **App-Flow (between the application client and application server)**:
+The precise application data flow the developer wants to prioritize and have stable latency or throughput for. This flow is in the current API version determined by the identified device and the application server. And it can be further elaborated with details such as ports or port-ranges. Future version of the API might allow more detailed flow identification features.
+
+* **Duration**:
+Duration (in seconds) for which the QoS session (between application client and application server) should be created. Limits for session duration can be set by the implementation for the QoS profile. The user may request a termination before its expiration.
+
+ * **Notification URL and token**:
+The API consumer may provide a callback URL (`sink`) on which notifications about all status change events (eg. provisioning termination) can be received from the API provider. This is an optional parameter. The notification will be sent as a CloudEvent compliant message.
+If `sink` is included, it is RECOMMENDED for the client to provide as well the `sinkCredential` property to protect the notification endpoint. In the current version, `sinkCredential.credentialType` MUST be set to `ACCESSTOKEN` if provided.
+
+# API functionality
+
+The usage of the QoD API is based on QoS profile classes and parameters which define App-Flows.
+Based on the API, QoS session resources can be created, queried, and deleted. Once an offered QoS profile class is requested, application users get a prioritized service with stable latency or throughput even in the case of congestion. The QoD API has the following characteristics:
+
+* A specified App-Flow is prioritized to ensure stable latency or throughput for that flow.
+* The prioritized App-Flow is described by providing information such as device IP address (or other device identifier) &amp; application server IP addresses and port/port-ranges.
+* The developer specifies the duration for which they need the prioritized App-flow.
+* Stable latency or throughput is requested by selecting from the list of QoS profiles made available by the service provider (e.g. QOS_E) to map latency and throughput requirements.
+* The API consumer can optionally also specify callback URL (`sink` param) on which notifications for the session can be sent. &lt;br&gt;
+
+Following diagram shows the interaction between different components
+
+![QoD Management API](https://raw.githubusercontent.com/camaraproject/QualityOnDemand/main/documentation/API_documentation/resources/QoD_details.PNG)
+
+# Authorization and authentication
+
+The "Camara Security and Interoperability Profile" provides details of how an API consumer requests an access token. Please refer to Identity and Consent Management (https://github.com/camaraproject/IdentityAndConsentManagement/) for the released version of the profile.
+
+The specific authorization flows to be used will be agreed upon during the onboarding process, happening between the API consumer and the API provider, taking into account the declared purpose for accessing the API, whilst also being subject to the prevailing legal framework dictated by local legislation.
+
+In cases where personal data is processed by the API and users can exercise their rights through mechanisms such as opt-in and/or opt-out, the use of three-legged access tokens is mandatory. This ensures that the API remains in compliance with privacy regulations, upholding the principles of transparency and user-centric privacy-by-design.
+
+# Identifying the device from the access token
+
+This API requires the API consumer to identify a device as the subject of the API as follows:
+- When the API is invoked using a two-legged access token, the subject will be identified from the optional `device` object, which therefore MUST be provided.
+
+- When a three-legged access token is used however, this optional identifier MUST NOT be provided, as the subject will be uniquely identified from the access token.
+
+This approach simplifies API usage for API consumers using a three-legged access token to invoke the API by relying on the information that is associated with the access token and was identified during the authentication process.
+
+## Error handling:
+- If the subject cannot be identified from the access token and the optional `device` object is not included in the request, then the server will return an error with the `422 MISSING_IDENTIFIER` error code.
+
+- If the subject can be identified from the access token and the optional `device` object is also included in the request, then the server will return an error with the `422 UNNECESSARY_IDENTIFIER` error code. This will be the case even if the same device is identified by these two methods, as the server is unable to make this comparison.
+
+- If the requested `qosProfile` exists but is currently not available for creating a session (e.g., its status is INACTIVE or DEPRECATED), then the server will return an error with the `422 QUALITY_ON_DEMAND.QOS_PROFILE_NOT_APPLICABLE` error code.
+
+# Multi-SIM scenario handling
+
+In multi-SIM scenarios where more than one mobile device is associated with a phone number (e.g. a smartphone with an associated smartwatch), it might not be possible to uniquely identify the device to which the enhanced QoS profile should apply from that phone number. If the phone number is used as the device identifier when creating a QoS session in a multi-SIM scenario, the API may respond with an error, apply the enhanced QoS profile to all devices in the multi-SIM group, or apply the enhanced QoS profile to a single device in the multi-SIM group which may not be the intended device.
+
+Possible solutions in such a scenario include:
+- Using the authorisation code flow to obtain an access token, which will automatically identify the intended device
+- Identifying the intended device from a unique identifier for that device, such as its source IP address and port
+- Check with the SIM provider whether a unique "secondary" phone number is already associated with each device, and use the secondary phone number to identify the intended device if available
+
+# Further info and support
+
+(FAQs will be added in a later version of the documentation)
+</doc>
+  <grammars>
+    <xs:schema xmlns:tns="http://localhost:9091/quality-on-demand/vwip/schemas" targetNamespace="http://localhost:9091/quality-on-demand/vwip/schemas" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+      <xs:element name="BaseSessionInfo" type="schemas:BaseSessionInfo" />
+      <xs:element name="SessionInfo" type="schemas:SessionInfo" />
+      <xs:element name="CreateSession" type="schemas:CreateSession" />
+      <xs:element name="PortsSpec" type="schemas:PortsSpec" />
+      <xs:element name="SinkCredential" type="schemas:SinkCredential" />
+      <xs:element name="PlainCredential" type="schemas:PlainCredential" />
+      <xs:element name="AccessTokenCredential" type="schemas:AccessTokenCredential" />
+      <xs:element name="RefreshTokenCredential" type="schemas:RefreshTokenCredential" />
+      <xs:element name="ExtendSessionDuration" type="schemas:ExtendSessionDuration" />
+      <xs:element name="CloudEvent" type="schemas:CloudEvent" />
+      <xs:element name="EventQosStatusChanged" type="schemas:EventQosStatusChanged" />
+      <xs:element name="StatusInfo" type="schemas:StatusInfo" />
+      <xs:element name="Device" type="schemas:Device" />
+      <xs:element name="ApplicationServer" type="schemas:ApplicationServer" />
+      <xs:element name="DeviceIpv4Addr" type="schemas:DeviceIpv4Addr" />
+      <xs:element name="QosStatus" type="schemas:QosStatus" />
+      <xs:element name="EventQosStatus" type="schemas:EventQosStatus" />
+      <xs:element name="ErrorInfo" type="schemas:ErrorInfo" />
+      <xs:element name="RetrieveSessionsInput" type="schemas:RetrieveSessionsInput" />
+      <xs:element name="Code" type="schemas:Code" />
+      <xs:element name="Code1" type="schemas:Code1" />
+      <xs:element name="Code2" type="schemas:Code2" />
+      <xs:element name="Code3" type="schemas:Code3" />
+      <xs:element name="Code4" type="schemas:Code4" />
+      <xs:element name="Code5" type="schemas:Code5" />
+      <xs:element name="Code6" type="schemas:Code6" />
+      <xs:element name="CreateSessionBadRequest4001" type="schemas:CreateSessionBadRequest4001" />
+      <xs:element name="CreateSessionUnprocessableEntity4221" type="schemas:CreateSessionUnprocessableEntity4221" />
+      <xs:element name="Data" type="schemas:Data" />
+      <xs:element name="Datacontenttype" type="schemas:Datacontenttype" />
+      <xs:element name="DeviceIpv4Addr1" type="schemas:DeviceIpv4Addr1" />
+      <xs:element name="DeviceIpv4Addr2" type="schemas:DeviceIpv4Addr2" />
+      <xs:element name="Generic4001" type="schemas:Generic4001" />
+      <xs:element name="Generic4011" type="schemas:Generic4011" />
+      <xs:element name="Generic4221" type="schemas:Generic4221" />
+      <xs:element name="Generic4291" type="schemas:Generic4291" />
+      <xs:element name="GenericDevice4041" type="schemas:GenericDevice4041" />
+      <xs:element name="GenericExtendSessionDuration4001" type="schemas:GenericExtendSessionDuration4001" />
+      <xs:element name="Range" type="schemas:Range" />
+      <xs:element name="SessionInConflict4091" type="schemas:SessionInConflict4091" />
+      <xs:element name="SessionStatusConflict4091" type="schemas:SessionStatusConflict4091" />
+      <xs:element name="createSession_Request" type="schemas:createSession_Request" />
+      <xs:element name="createSession201_Response0" type="schemas:createSession201_Response0" />
+      <xs:element name="createSession400_Response0" type="schemas:createSession400_Response0" />
+      <xs:element name="createSession401_Response0" type="schemas:createSession401_Response0" />
+      <xs:element name="createSession403_Response0" type="schemas:createSession403_Response0" />
+      <xs:element name="createSession404_Response0" type="schemas:createSession404_Response0" />
+      <xs:element name="createSession409_Response0" type="schemas:createSession409_Response0" />
+      <xs:element name="createSession422_Response0" type="schemas:createSession422_Response0" />
+      <xs:element name="createSession429_Response0" type="schemas:createSession429_Response0" />
+      <xs:element name="getSession200_Response0" type="schemas:getSession200_Response0" />
+      <xs:element name="getSession400_Response0" type="schemas:getSession400_Response0" />
+      <xs:element name="getSession401_Response0" type="schemas:getSession401_Response0" />
+      <xs:element name="getSession403_Response0" type="schemas:getSession403_Response0" />
+      <xs:element name="getSession404_Response0" type="schemas:getSession404_Response0" />
+      <xs:element name="getSession429_Response0" type="schemas:getSession429_Response0" />
+      <xs:element name="deleteSession400_Response0" type="schemas:deleteSession400_Response0" />
+      <xs:element name="deleteSession401_Response0" type="schemas:deleteSession401_Response0" />
+      <xs:element name="deleteSession403_Response0" type="schemas:deleteSession403_Response0" />
+      <xs:element name="deleteSession404_Response0" type="schemas:deleteSession404_Response0" />
+      <xs:element name="deleteSession429_Response0" type="schemas:deleteSession429_Response0" />
+      <xs:element name="extendQosSessionDuration_Request" type="schemas:extendQosSessionDuration_Request" />
+      <xs:element name="extendQosSessionDuration200_Response0" type="schemas:extendQosSessionDuration200_Response0" />
+      <xs:element name="extendQosSessionDuration400_Response0" type="schemas:extendQosSessionDuration400_Response0" />
+      <xs:element name="extendQosSessionDuration401_Response0" type="schemas:extendQosSessionDuration401_Response0" />
+      <xs:element name="extendQosSessionDuration403_Response0" type="schemas:extendQosSessionDuration403_Response0" />
+      <xs:element name="extendQosSessionDuration404_Response0" type="schemas:extendQosSessionDuration404_Response0" />
+      <xs:element name="extendQosSessionDuration409_Response0" type="schemas:extendQosSessionDuration409_Response0" />
+      <xs:element name="extendQosSessionDuration429_Response0" type="schemas:extendQosSessionDuration429_Response0" />
+      <xs:element name="retrieveSessionsByDevice_Request" type="schemas:retrieveSessionsByDevice_Request" />
+      <xs:element name="retrieveSessionsByDevice200_Response0" type="schemas:retrieveSessionsByDevice200_Response0" />
+      <xs:element name="retrieveSessionsByDevice400_Response0" type="schemas:retrieveSessionsByDevice400_Response0" />
+      <xs:element name="retrieveSessionsByDevice401_Response0" type="schemas:retrieveSessionsByDevice401_Response0" />
+      <xs:element name="retrieveSessionsByDevice403_Response0" type="schemas:retrieveSessionsByDevice403_Response0" />
+      <xs:element name="retrieveSessionsByDevice404_Response0" type="schemas:retrieveSessionsByDevice404_Response0" />
+      <xs:element name="retrieveSessionsByDevice422_Response0" type="schemas:retrieveSessionsByDevice422_Response0" />
+      <xs:element name="retrieveSessionsByDevice429_Response0" type="schemas:retrieveSessionsByDevice429_Response0" />
+      <xs:complexType name="BaseSessionInfo">
+        <xs:annotation>
+          <xs:documentation>Common attributes of a QoD session</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+          <xs:element minOccurs="0" name="device" type="schemas:Device">
+            <xs:annotation>
+              <xs:documentation>End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.The developer can choose to provide the below specified device identifiers:* `ipv4Address`* `ipv6Address`* `phoneNumber`* `networkAccessIdentifier`NOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.NOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="applicationServer" type="schemas:ApplicationServer">
+            <xs:annotation>
+              <xs:documentation>A server hosting backend applications to deliver some business logic to clients.The developer can choose to provide the below specified device identifiers:* `ipv4Address`* `ipv6Address`</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="devicePorts" type="schemas:PortsSpec">
+            <xs:annotation>
+              <xs:documentation>The ports used locally by the device for flows to which the requested QoS profile should apply. If omitted, then the qosProfile will apply to all flows between the device and the specified application server address and ports</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="applicationServerPorts" type="schemas:PortsSpec">
+            <xs:annotation>
+              <xs:documentation>A list of single ports or port ranges on the application server</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="qosProfile">
+            <xs:simpleType>
+              <xs:annotation>
+                <xs:documentation>A unique name for identifying a specific QoS profile.This may follow different formats depending on the API provider implementation.Some options addresses:- A UUID style string- Support for predefined profiles QOS_S, QOS_M, QOS_L, and QOS_E- A searchable descriptive nameThe set of QoS Profiles that an API provider is offering may be retrieved by means of the QoS Profile API (qos-profile) or agreed on onboarding time.</xs:documentation>
+              </xs:annotation>
+              <xs:restriction base="xs:string">
+                <xs:pattern value="^[a-zA-Z0-9_.-]+$" />
+                <xs:maxLength value="256" />
+                <xs:minLength value="3" />
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:element>
+          <xs:element minOccurs="0" name="sink" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>The address to which events about all status changes of the session (e.g. session termination) shall be delivered using the selected protocol.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="sinkCredential" type="schemas:SinkCredential">
+            <xs:annotation>
+              <xs:documentation>A sink credential provides authentication or authorization information necessary to enable delivery of events to a target.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="SessionInfo">
+        <xs:annotation>
+          <xs:documentation>Session related information returned in responses.Note that the device object is defined as optional and will only to be returned if provided in createSession. If more than one type of device identifier was provided, only one identifier will be returned (at implementation choice and with the original value provided in createSession).Please note that IP addresses of devices can change and get reused, so the original values may no longer identify the same device. They identified the device at the time of session creation.</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+          <xs:element minOccurs="0" name="device" type="schemas:Device">
+            <xs:annotation>
+              <xs:documentation>End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.The developer can choose to provide the below specified device identifiers:* `ipv4Address`* `ipv6Address`* `phoneNumber`* `networkAccessIdentifier`NOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.NOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="applicationServer" type="schemas:ApplicationServer">
+            <xs:annotation>
+              <xs:documentation>A server hosting backend applications to deliver some business logic to clients.The developer can choose to provide the below specified device identifiers:* `ipv4Address`* `ipv6Address`</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="devicePorts" type="schemas:PortsSpec">
+            <xs:annotation>
+              <xs:documentation>The ports used locally by the device for flows to which the requested QoS profile should apply. If omitted, then the qosProfile will apply to all flows between the device and the specified application server address and ports</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="applicationServerPorts" type="schemas:PortsSpec">
+            <xs:annotation>
+              <xs:documentation>A list of single ports or port ranges on the application server</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="qosProfile">
+            <xs:simpleType>
+              <xs:annotation>
+                <xs:documentation>A unique name for identifying a specific QoS profile.This may follow different formats depending on the API provider implementation.Some options addresses:- A UUID style string- Support for predefined profiles QOS_S, QOS_M, QOS_L, and QOS_E- A searchable descriptive nameThe set of QoS Profiles that an API provider is offering may be retrieved by means of the QoS Profile API (qos-profile) or agreed on onboarding time.</xs:documentation>
+              </xs:annotation>
+              <xs:restriction base="xs:string">
+                <xs:pattern value="^[a-zA-Z0-9_.-]+$" />
+                <xs:maxLength value="256" />
+                <xs:minLength value="3" />
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:element>
+          <xs:element minOccurs="0" name="sink" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>The address to which events about all status changes of the session (e.g. session termination) shall be delivered using the selected protocol.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="sinkCredential" type="schemas:SinkCredential">
+            <xs:annotation>
+              <xs:documentation>A sink credential provides authentication or authorization information necessary to enable delivery of events to a target.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="sessionId" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Session ID in UUID format</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="duration">
+            <xs:simpleType>
+              <xs:annotation>
+                <xs:documentation>Session duration in seconds. Implementations can grant the requested session duration or set a different duration, based on network policies or conditions.- When `qosStatus` is "REQUESTED", the value is the duration to be scheduled, granted by the implementation.- When `qosStatus` is AVAILABLE", the value is the overall duration since `startedAt. When the session is extended, the value is the new overall duration of the session.- When `qosStatus` is "UNAVAILABLE", the value is the overall effective duration since `startedAt` until the session was terminated.</xs:documentation>
+              </xs:annotation>
+              <xs:restriction base="xs:integer">
+                <xs:minInclusive value="1" />
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:element>
+          <xs:element minOccurs="0" name="startedAt" type="xs:dateTime">
+            <xs:annotation>
+              <xs:documentation>Date and time when the QoS status became "AVAILABLE". Not to be returned when `qosStatus` is "REQUESTED". Format must follow RFC 3339 and must indicate time zone (UTC or local).</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="expiresAt" type="xs:dateTime">
+            <xs:annotation>
+              <xs:documentation>Date and time of the QoS session expiration. Format must follow RFC 3339 and must indicate time zone (UTC or local).- When `qosStatus` is "AVAILABLE", it is the limit time when the session is scheduled to finnish, if not terminated by other means.- When `qosStatus` is "UNAVAILABLE", it is the time when the session was terminated.- Not to be returned when `qosStatus` is "REQUESTED".When the session is extended, the value is the new expiration time of the session.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="qosStatus" type="schemas:QosStatus">
+            <xs:annotation>
+              <xs:documentation>The current status of the requested QoS session. The status can be one of the following:* `REQUESTED` - QoS has been requested by creating a session* `AVAILABLE` - The requested QoS has been provided by the network* `UNAVAILABLE` - The requested QoS cannot be provided by the network due to some reason</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="statusInfo" type="schemas:StatusInfo">
+            <xs:annotation>
+              <xs:documentation>Reason for the new `qosStatus`. Currently `statusInfo` is only applicable when `qosStatus` is 'UNAVAILABLE'.* `DURATION_EXPIRED` - Session terminated due to requested duration expired* `NETWORK_TERMINATED` - Network terminated the session before the requested duration expired* `DELETE_REQUESTED`- User requested the deletion of the session before the requested duration expired</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="CreateSession">
+        <xs:annotation>
+          <xs:documentation>Attributes required to create a session</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+          <xs:element minOccurs="0" name="device" type="schemas:Device">
+            <xs:annotation>
+              <xs:documentation>End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.The developer can choose to provide the below specified device identifiers:* `ipv4Address`* `ipv6Address`* `phoneNumber`* `networkAccessIdentifier`NOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.NOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="applicationServer" type="schemas:ApplicationServer">
+            <xs:annotation>
+              <xs:documentation>A server hosting backend applications to deliver some business logic to clients.The developer can choose to provide the below specified device identifiers:* `ipv4Address`* `ipv6Address`</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="devicePorts" type="schemas:PortsSpec">
+            <xs:annotation>
+              <xs:documentation>The ports used locally by the device for flows to which the requested QoS profile should apply. If omitted, then the qosProfile will apply to all flows between the device and the specified application server address and ports</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="applicationServerPorts" type="schemas:PortsSpec">
+            <xs:annotation>
+              <xs:documentation>A list of single ports or port ranges on the application server</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="qosProfile">
+            <xs:simpleType>
+              <xs:annotation>
+                <xs:documentation>A unique name for identifying a specific QoS profile.This may follow different formats depending on the API provider implementation.Some options addresses:- A UUID style string- Support for predefined profiles QOS_S, QOS_M, QOS_L, and QOS_E- A searchable descriptive nameThe set of QoS Profiles that an API provider is offering may be retrieved by means of the QoS Profile API (qos-profile) or agreed on onboarding time.</xs:documentation>
+              </xs:annotation>
+              <xs:restriction base="xs:string">
+                <xs:pattern value="^[a-zA-Z0-9_.-]+$" />
+                <xs:maxLength value="256" />
+                <xs:minLength value="3" />
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:element>
+          <xs:element minOccurs="0" name="sink" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>The address to which events about all status changes of the session (e.g. session termination) shall be delivered using the selected protocol.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="sinkCredential" type="schemas:SinkCredential">
+            <xs:annotation>
+              <xs:documentation>A sink credential provides authentication or authorization information necessary to enable delivery of events to a target.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="duration">
+            <xs:simpleType>
+              <xs:annotation>
+                <xs:documentation>Requested session duration in seconds. Value may be explicitly limited for the QoS profile, as specified in the Qos Profile (see qos-profile API). Implementations can grant the requested session duration or set a different duration, based on network policies or conditions.</xs:documentation>
+              </xs:annotation>
+              <xs:restriction base="xs:integer">
+                <xs:minInclusive value="1" />
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="PortsSpec">
+        <xs:annotation>
+          <xs:documentation>Specification of several TCP or UDP ports</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+          <xs:element minOccurs="0" maxOccurs="unbounded" name="ranges" type="schemas:Range">
+            <xs:annotation>
+              <xs:documentation>Range of TCP or UDP ports</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" maxOccurs="unbounded" name="ports">
+            <xs:simpleType>
+              <xs:annotation>
+                <xs:documentation>Array of TCP or UDP ports</xs:documentation>
+              </xs:annotation>
+              <xs:restriction base="xs:integer">
+                <xs:maxInclusive value="65535" />
+                <xs:minInclusive value="0" />
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="SinkCredential">
+        <xs:sequence>
+          <xs:element minOccurs="0" name="credentialType" type="xs:string" />
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="PlainCredential">
+        <xs:annotation>
+          <xs:documentation>A plain credential as a combination of an identifier and a secret. MUST not be used in this API version.</xs:documentation>
+        </xs:annotation>
+        <xs:complexContent mixed="false">
+          <xs:extension base="schemas:SinkCredential">
+            <xs:sequence>
+              <xs:element minOccurs="1" name="identifier" type="xs:string">
+                <xs:annotation>
+                  <xs:documentation>The identifier might be an account or username.</xs:documentation>
+                </xs:annotation>
+              </xs:element>
+              <xs:element minOccurs="1" name="secret" type="xs:string">
+                <xs:annotation>
+                  <xs:documentation>The secret might be a password or passphrase.</xs:documentation>
+                </xs:annotation>
+              </xs:element>
+            </xs:sequence>
+          </xs:extension>
+        </xs:complexContent>
+      </xs:complexType>
+      <xs:complexType name="AccessTokenCredential">
+        <xs:annotation>
+          <xs:documentation>An access token credential.</xs:documentation>
+        </xs:annotation>
+        <xs:complexContent mixed="false">
+          <xs:extension base="schemas:SinkCredential">
+            <xs:sequence>
+              <xs:element minOccurs="1" name="accessToken" type="xs:string">
+                <xs:annotation>
+                  <xs:documentation>REQUIRED. An access token is a previously acquired token granting access to the target resource.</xs:documentation>
+                </xs:annotation>
+              </xs:element>
+              <xs:element minOccurs="1" name="accessTokenExpiresUtc" type="xs:dateTime">
+                <xs:annotation>
+                  <xs:documentation>REQUIRED. An absolute (UTC) timestamp at which the token shall be considered expired. Token expiration should occurafter the termination of the requested session, allowing the client to be notified of any changes during thesessions's existence. If the token expires while the session is still active, the client will stop receiving notifications.If the access token is a JWT and registered "exp" (Expiration Time) claim is present, the two expiry times should match.It must follow [RFC 3339](https://datatracker.ietf.org/doc/html/rfc3339#section-5.6) and must have time zone.Recommended format is yyyy-MM-dd'T'HH:mm:ss.SSSZ (i.e. which allows 2023-07-03T14:27:08.312+02:00 or 2023-07-03T12:27:08.312Z)</xs:documentation>
+                </xs:annotation>
+              </xs:element>
+              <xs:element minOccurs="1" fixed="bearer" name="accessTokenType" type="xs:string">
+                <xs:annotation>
+                  <xs:documentation>REQUIRED. Type of the access token (See [OAuth 2.0](https://tools.ietf.org/html/rfc6749#section-7.1)). For the current version of the API the type MUST be set to `Bearer`.</xs:documentation>
+                </xs:annotation>
+              </xs:element>
+            </xs:sequence>
+          </xs:extension>
+        </xs:complexContent>
+      </xs:complexType>
+      <xs:complexType name="RefreshTokenCredential">
+        <xs:annotation>
+          <xs:documentation>An access token credential with a refresh token. MUST not be used in this API version.</xs:documentation>
+        </xs:annotation>
+        <xs:complexContent mixed="false">
+          <xs:extension base="schemas:SinkCredential">
+            <xs:sequence>
+              <xs:element minOccurs="1" name="accessToken" type="xs:string">
+                <xs:annotation>
+                  <xs:documentation>REQUIRED. An access token is a previously acquired token granting access to the target resource.</xs:documentation>
+                </xs:annotation>
+              </xs:element>
+              <xs:element minOccurs="1" name="accessTokenExpiresUtc" type="xs:dateTime">
+                <xs:annotation>
+                  <xs:documentation>REQUIRED. An absolute UTC instant at which the token shall be considered expired.</xs:documentation>
+                </xs:annotation>
+              </xs:element>
+              <xs:element minOccurs="1" fixed="bearer" name="accessTokenType" type="xs:string">
+                <xs:annotation>
+                  <xs:documentation>REQUIRED. Type of the access token (See [OAuth 2.0](https://tools.ietf.org/html/rfc6749#section-7.1)).</xs:documentation>
+                </xs:annotation>
+              </xs:element>
+              <xs:element minOccurs="1" name="refreshToken" type="xs:string">
+                <xs:annotation>
+                  <xs:documentation>REQUIRED. An refresh token credential used to acquire access tokens.</xs:documentation>
+                </xs:annotation>
+              </xs:element>
+              <xs:element minOccurs="1" name="refreshTokenEndpoint" type="xs:string">
+                <xs:annotation>
+                  <xs:documentation>REQUIRED. A URL at which the refresh token can be traded for an access token.</xs:documentation>
+                </xs:annotation>
+              </xs:element>
+            </xs:sequence>
+          </xs:extension>
+        </xs:complexContent>
+      </xs:complexType>
+      <xs:complexType name="ExtendSessionDuration">
+        <xs:annotation>
+          <xs:documentation>Attributes required to extend the duration of an active session</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+          <xs:element minOccurs="1" name="requestedAdditionalDuration">
+            <xs:simpleType>
+              <xs:annotation>
+                <xs:documentation>Additional duration in seconds to be added to the current session duration. The overall session duration, including extensions, shall not exceed the maximum duration limit for the QoS Profile.</xs:documentation>
+              </xs:annotation>
+              <xs:restriction base="xs:integer">
+                <xs:minInclusive value="1" />
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="CloudEvent">
+        <xs:annotation>
+          <xs:documentation>Event compliant with the CloudEvents specification</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+          <xs:element minOccurs="1" name="id" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Identifier of this event, that must be unique in the source context.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="source" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Identifies the context in which an event happened in the specific provider implementation.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="type" type="xs:string" />
+          <xs:element minOccurs="1" fixed="1.0" name="specversion" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Version of the specification to which this event conforms (must be 1.0 if it conforms to Cloudevents 1.0.2 version)</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="datacontenttype" type="schemas:Datacontenttype">
+            <xs:annotation>
+              <xs:documentation>media-type that describes the event payload encoding, must be "application/json" for CAMARA APIs</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="data">
+            <xs:annotation>
+              <xs:documentation>Event notification details payload, which depends on the event type</xs:documentation>
+            </xs:annotation>
+            <xs:complexType>
+              <xs:sequence>
+                <xs:any />
+              </xs:sequence>
+            </xs:complexType>
+          </xs:element>
+          <xs:element minOccurs="1" name="time" type="xs:dateTime">
+            <xs:annotation>
+              <xs:documentation>Timestamp of when the occurrence happened. It must follow RFC 3339</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="EventQosStatusChanged">
+        <xs:annotation>
+          <xs:documentation>Event to notify a QoS status change</xs:documentation>
+        </xs:annotation>
+        <xs:complexContent mixed="false">
+          <xs:extension base="schemas:CloudEvent">
+            <xs:sequence>
+              <xs:element minOccurs="1" name="data" type="schemas:Data">
+                <xs:annotation>
+                  <xs:documentation>Event details depending on the event type</xs:documentation>
+                </xs:annotation>
+              </xs:element>
+            </xs:sequence>
+          </xs:extension>
+        </xs:complexContent>
+      </xs:complexType>
+      <xs:simpleType name="StatusInfo">
+        <xs:annotation>
+          <xs:documentation>Reason for the new `qosStatus`. Currently `statusInfo` is only applicable when `qosStatus` is 'UNAVAILABLE'.* `DURATION_EXPIRED` - Session terminated due to requested duration expired* `NETWORK_TERMINATED` - Network terminated the session before the requested duration expired* `DELETE_REQUESTED`- User requested the deletion of the session before the requested duration expired</xs:documentation>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="DURATION_EXPIRED" />
+          <xs:enumeration value="NETWORK_TERMINATED" />
+          <xs:enumeration value="DELETE_REQUESTED" />
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:complexType name="Device">
+        <xs:annotation>
+          <xs:documentation>End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.The developer can choose to provide the below specified device identifiers:* `ipv4Address`* `ipv6Address`* `phoneNumber`* `networkAccessIdentifier`NOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.NOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines.</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+          <xs:element minOccurs="0" name="phoneNumber">
+            <xs:simpleType>
+              <xs:annotation>
+                <xs:documentation>A public identifier addressing a telephone subscription. In mobile networks it corresponds to the MSISDN (Mobile Station International Subscriber Directory Number). In order to be globally unique it has to be formatted in international format, according to E.164 standard, prefixed with '+'.</xs:documentation>
+              </xs:annotation>
+              <xs:restriction base="xs:string">
+                <xs:pattern value="^\+[1-9][0-9]{4,14}$" />
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:element>
+          <xs:element minOccurs="0" name="networkAccessIdentifier" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>A public identifier addressing a subscription in a mobile network. In 3GPP terminology, it corresponds to the GPSI formatted with the External Identifier ({Local Identifier}@{Domain Identifier}). Unlike the telephone number, the network access identifier is not subjected to portability ruling in force, and is individually managed by each operator.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="ipv4Address" type="schemas:DeviceIpv4Addr2">
+            <xs:annotation>
+              <xs:documentation>The device should be identified by either the public (observed) IP address and port as seen by the application server, or the private (local) and any public (observed) IP addresses in use by the device (this information can be obtained by various means, for example from some DNS servers).If the allocated and observed IP addresses are the same (i.e. NAT is not in use) then  the same address should be specified for both publicAddress and privateAddress.If NAT64 is in use, the device should be identified by its publicAddress and publicPort, or separately by its allocated IPv6 address (field ipv6Address of the Device object)In all cases, publicAddress must be specified, along with at least one of either privateAddress or publicPort, dependent upon which is known. In general, mobile devices cannot be identified by their public IPv4 address alone.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="ipv6Address" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>The device should be identified by the observed IPv6 address, or by any single IPv6 address from within the subnet allocated to the device (e.g. adding ::0 to the /64 prefix).The session shall apply to all IP flows between the device subnet and the specified application server, unless further restricted by the optional parameters devicePorts or applicationServerPorts.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="ApplicationServer">
+        <xs:annotation>
+          <xs:documentation>A server hosting backend applications to deliver some business logic to clients.The developer can choose to provide the below specified device identifiers:* `ipv4Address`* `ipv6Address`</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+          <xs:element minOccurs="0" name="ipv4Address" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>IPv4 address may be specified in form &lt;address/mask&gt; as:- address - an IPv4 number in dotted-quad form 1.2.3.4. Only this exact IP number will match the flow control rule.- address/mask - an IP number as above with a mask width of the form 1.2.3.4/24.In this case, all IP numbers from 1.2.3.0 to 1.2.3.255 will match. The bit width MUST be valid for the IP version.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="ipv6Address" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>IPv6 address may be specified in form &lt;address/mask&gt; as:- address - The /128 subnet is optional for single addresses:- 2001:db8:85a3:8d3:1319:8a2e:370:7344- 2001:db8:85a3:8d3:1319:8a2e:370:7344/128- address/mask - an IP v6 number with a mask:- 2001:db8:85a3:8d3::0/64- 2001:db8:85a3:8d3::/64</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="DeviceIpv4Addr">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="publicAddress" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>A single IPv4 address with no subnet mask</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="privateAddress" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>A single IPv4 address with no subnet mask</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="publicPort">
+            <xs:simpleType>
+              <xs:annotation>
+                <xs:documentation>TCP or UDP port number</xs:documentation>
+              </xs:annotation>
+              <xs:restriction base="xs:integer">
+                <xs:maxInclusive value="65535" />
+                <xs:minInclusive value="0" />
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:simpleType name="QosStatus">
+        <xs:annotation>
+          <xs:documentation>The current status of the requested QoS session. The status can be one of the following:* `REQUESTED` - QoS has been requested by creating a session* `AVAILABLE` - The requested QoS has been provided by the network* `UNAVAILABLE` - The requested QoS cannot be provided by the network due to some reason</xs:documentation>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="REQUESTED" />
+          <xs:enumeration value="AVAILABLE" />
+          <xs:enumeration value="UNAVAILABLE" />
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:simpleType name="EventQosStatus">
+        <xs:annotation>
+          <xs:documentation>The current status of a requested or previously available session. Applicable values in the event are:*  `AVAILABLE` - The requested QoS has been provided by the network.*  `UNAVAILABLE` - A requested or previously available QoS session is now unavailable. `statusInfo` may provide additional information about the reason for the unavailability.</xs:documentation>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="AVAILABLE" />
+          <xs:enumeration value="UNAVAILABLE" />
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:complexType name="ErrorInfo">
+        <xs:annotation>
+          <xs:documentation>Common schema for errors</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+          <xs:element minOccurs="1" name="status" type="xs:integer">
+            <xs:annotation>
+              <xs:documentation>HTTP status code returned along with this error response</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="code" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Code given to this error</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="message" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Detailed error description</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="RetrieveSessionsInput">
+        <xs:annotation>
+          <xs:documentation>Parameters to get QoS session information by device</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+          <xs:element minOccurs="0" name="device" type="schemas:Device">
+            <xs:annotation>
+              <xs:documentation>End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.The developer can choose to provide the below specified device identifiers:* `ipv4Address`* `ipv6Address`* `phoneNumber`* `networkAccessIdentifier`NOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.NOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:simpleType name="Code">
+        <xs:annotation>
+          <xs:documentation>Code given to this error</xs:documentation>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="INVALID_ARGUMENT" />
+          <xs:enumeration value="OUT_OF_RANGE" />
+          <xs:enumeration value="QUALITY_ON_DEMAND.DURATION_OUT_OF_RANGE" />
+          <xs:enumeration value="INVALID_CREDENTIAL" />
+          <xs:enumeration value="INVALID_TOKEN" />
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:simpleType name="Code1">
+        <xs:annotation>
+          <xs:documentation>Code given to this error</xs:documentation>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="NOT_FOUND" />
+          <xs:enumeration value="IDENTIFIER_NOT_FOUND" />
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:simpleType name="Code2">
+        <xs:annotation>
+          <xs:documentation>Code given to this error</xs:documentation>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="IDENTIFIER_MISMATCH" />
+          <xs:enumeration value="SERVICE_NOT_APPLICABLE" />
+          <xs:enumeration value="MISSING_IDENTIFIER" />
+          <xs:enumeration value="UNSUPPORTED_IDENTIFIER" />
+          <xs:enumeration value="UNNECESSARY_IDENTIFIER" />
+          <xs:enumeration value="QUALITY_ON_DEMAND.QOS_PROFILE_NOT_APPLICABLE" />
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:simpleType name="Code3">
+        <xs:annotation>
+          <xs:documentation>Code given to this error</xs:documentation>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="QUOTA_EXCEEDED" />
+          <xs:enumeration value="TOO_MANY_REQUESTS" />
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:simpleType name="Code4">
+        <xs:annotation>
+          <xs:documentation>Code given to this error</xs:documentation>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="INVALID_ARGUMENT" />
+          <xs:enumeration value="OUT_OF_RANGE" />
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:simpleType name="Code5">
+        <xs:annotation>
+          <xs:documentation>Code given to this error</xs:documentation>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="INVALID_ARGUMENT" />
+          <xs:enumeration value="OUT_OF_RANGE" />
+          <xs:enumeration value="QUALITY_ON_DEMAND.DURATION_OUT_OF_RANGE" />
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:simpleType name="Code6">
+        <xs:annotation>
+          <xs:documentation>Code given to this error</xs:documentation>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="IDENTIFIER_MISMATCH" />
+          <xs:enumeration value="SERVICE_NOT_APPLICABLE" />
+          <xs:enumeration value="MISSING_IDENTIFIER" />
+          <xs:enumeration value="UNSUPPORTED_IDENTIFIER" />
+          <xs:enumeration value="UNNECESSARY_IDENTIFIER" />
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:complexType name="CreateSessionBadRequest4001">
+        <xs:sequence>
+          <xs:element minOccurs="1" fixed="400" name="status" type="xs:integer">
+            <xs:annotation>
+              <xs:documentation>HTTP status code returned along with this error response</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="code" type="schemas:Code">
+            <xs:annotation>
+              <xs:documentation>Code given to this error</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="message" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Detailed error description</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="CreateSessionUnprocessableEntity4221">
+        <xs:sequence>
+          <xs:element minOccurs="1" fixed="422" name="status" type="xs:integer">
+            <xs:annotation>
+              <xs:documentation>HTTP status code returned along with this error response</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="code" type="schemas:Code2">
+            <xs:annotation>
+              <xs:documentation>Code given to this error</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="message" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Detailed error description</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="Data">
+        <xs:annotation>
+          <xs:documentation>Event details depending on the event type</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+          <xs:element minOccurs="1" name="sessionId" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Session ID in UUID format</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="qosStatus" type="schemas:EventQosStatus">
+            <xs:annotation>
+              <xs:documentation>The current status of a requested or previously available session. Applicable values in the event are:*  `AVAILABLE` - The requested QoS has been provided by the network.*  `UNAVAILABLE` - A requested or previously available QoS session is now unavailable. `statusInfo` may provide additional information about the reason for the unavailability.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="statusInfo" type="schemas:StatusInfo">
+            <xs:annotation>
+              <xs:documentation>Reason for the new `qosStatus`. Currently `statusInfo` is only applicable when `qosStatus` is 'UNAVAILABLE'.* `DURATION_EXPIRED` - Session terminated due to requested duration expired* `NETWORK_TERMINATED` - Network terminated the session before the requested duration expired* `DELETE_REQUESTED`- User requested the deletion of the session before the requested duration expired</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:simpleType name="Datacontenttype">
+        <xs:annotation>
+          <xs:documentation>media-type that describes the event payload encoding, must be "application/json" for CAMARA APIs</xs:documentation>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="application/json" />
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:complexType name="DeviceIpv4Addr1">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="publicAddress" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>A single IPv4 address with no subnet mask</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="privateAddress" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>A single IPv4 address with no subnet mask</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="publicPort">
+            <xs:simpleType>
+              <xs:annotation>
+                <xs:documentation>TCP or UDP port number</xs:documentation>
+              </xs:annotation>
+              <xs:restriction base="xs:integer">
+                <xs:maxInclusive value="65535" />
+                <xs:minInclusive value="0" />
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="DeviceIpv4Addr2">
+        <xs:annotation>
+          <xs:documentation>The device should be identified by either the public (observed) IP address and port as seen by the application server, or the private (local) and any public (observed) IP addresses in use by the device (this information can be obtained by various means, for example from some DNS servers).If the allocated and observed IP addresses are the same (i.e. NAT is not in use) then  the same address should be specified for both publicAddress and privateAddress.If NAT64 is in use, the device should be identified by its publicAddress and publicPort, or separately by its allocated IPv6 address (field ipv6Address of the Device object)In all cases, publicAddress must be specified, along with at least one of either privateAddress or publicPort, dependent upon which is known. In general, mobile devices cannot be identified by their public IPv4 address alone.</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+          <xs:element minOccurs="0" name="publicAddress" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>A single IPv4 address with no subnet mask</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="privateAddress" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>A single IPv4 address with no subnet mask</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="0" name="publicPort">
+            <xs:simpleType>
+              <xs:annotation>
+                <xs:documentation>TCP or UDP port number</xs:documentation>
+              </xs:annotation>
+              <xs:restriction base="xs:integer">
+                <xs:maxInclusive value="65535" />
+                <xs:minInclusive value="0" />
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="Generic4001">
+        <xs:sequence>
+          <xs:element minOccurs="1" fixed="400" name="status" type="xs:integer">
+            <xs:annotation>
+              <xs:documentation>HTTP status code returned along with this error response</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="code" type="schemas:Code4">
+            <xs:annotation>
+              <xs:documentation>Code given to this error</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="message" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Detailed error description</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="Generic4011">
+        <xs:sequence>
+          <xs:element minOccurs="1" fixed="401" name="status" type="xs:integer">
+            <xs:annotation>
+              <xs:documentation>HTTP status code returned along with this error response</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" fixed="UNAUTHENTICATED" name="code" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Code given to this error</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="message" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Detailed error description</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="Generic4221">
+        <xs:sequence>
+          <xs:element minOccurs="1" fixed="422" name="status" type="xs:integer">
+            <xs:annotation>
+              <xs:documentation>HTTP status code returned along with this error response</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="code" type="schemas:Code6">
+            <xs:annotation>
+              <xs:documentation>Code given to this error</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="message" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Detailed error description</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="Generic4291">
+        <xs:sequence>
+          <xs:element minOccurs="1" fixed="429" name="status" type="xs:integer">
+            <xs:annotation>
+              <xs:documentation>HTTP status code returned along with this error response</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="code" type="schemas:Code3">
+            <xs:annotation>
+              <xs:documentation>Code given to this error</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="message" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Detailed error description</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="GenericDevice4041">
+        <xs:sequence>
+          <xs:element minOccurs="1" fixed="404" name="status" type="xs:integer">
+            <xs:annotation>
+              <xs:documentation>HTTP status code returned along with this error response</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="code" type="schemas:Code1">
+            <xs:annotation>
+              <xs:documentation>Code given to this error</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="message" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Detailed error description</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="GenericExtendSessionDuration4001">
+        <xs:sequence>
+          <xs:element minOccurs="1" fixed="400" name="status" type="xs:integer">
+            <xs:annotation>
+              <xs:documentation>HTTP status code returned along with this error response</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="code" type="schemas:Code5">
+            <xs:annotation>
+              <xs:documentation>Code given to this error</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="message" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Detailed error description</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="Range">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="from">
+            <xs:simpleType>
+              <xs:annotation>
+                <xs:documentation>TCP or UDP port number</xs:documentation>
+              </xs:annotation>
+              <xs:restriction base="xs:integer">
+                <xs:maxInclusive value="65535" />
+                <xs:minInclusive value="0" />
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:element>
+          <xs:element minOccurs="1" name="to">
+            <xs:simpleType>
+              <xs:annotation>
+                <xs:documentation>TCP or UDP port number</xs:documentation>
+              </xs:annotation>
+              <xs:restriction base="xs:integer">
+                <xs:maxInclusive value="65535" />
+                <xs:minInclusive value="0" />
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="SessionInConflict4091">
+        <xs:sequence>
+          <xs:element minOccurs="1" fixed="409" name="status" type="xs:integer">
+            <xs:annotation>
+              <xs:documentation>HTTP status code returned along with this error response</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" fixed="CONFLICT" name="code" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Code given to this error</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="message" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Detailed error description</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="SessionStatusConflict4091">
+        <xs:sequence>
+          <xs:element minOccurs="1" fixed="409" name="status" type="xs:integer">
+            <xs:annotation>
+              <xs:documentation>HTTP status code returned along with this error response</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" fixed="QUALITY_ON_DEMAND.SESSION_EXTENSION_NOT_ALLOWED" name="code" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Code given to this error</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+          <xs:element minOccurs="1" name="message" type="xs:string">
+            <xs:annotation>
+              <xs:documentation>Detailed error description</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="createSession_Request">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="body" type="schemas:CreateSession">
+            <xs:annotation>
+              <xs:documentation>Parameters to create a new session</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="createSession201_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response201" type="schemas:SessionInfo">
+            <xs:annotation>
+              <xs:documentation>Session related information returned in responses.Note that the device object is defined as optional and will only to be returned if provided in createSession. If more than one type of device identifier was provided, only one identifier will be returned (at implementation choice and with the original value provided in createSession).Please note that IP addresses of devices can change and get reused, so the original values may no longer identify the same device. They identified the device at the time of session creation.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="createSession400_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response400" type="schemas:CreateSessionBadRequest4001">
+            <xs:annotation>
+              <xs:documentation>Bad Request when creating a session</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="createSession401_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response401" type="schemas:Generic4011">
+            <xs:annotation>
+              <xs:documentation>Unauthorized</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="createSession403_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response403" type="schemas:Generic4011">
+            <xs:annotation>
+              <xs:documentation>Forbidden</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="createSession404_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response404" type="schemas:GenericDevice4041">
+            <xs:annotation>
+              <xs:documentation>Not found</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="createSession409_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response409" type="schemas:SessionInConflict4091">
+            <xs:annotation>
+              <xs:documentation>Conflict</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="createSession422_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response422" type="schemas:CreateSessionUnprocessableEntity4221">
+            <xs:annotation>
+              <xs:documentation>Unprocessable Content</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="createSession429_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response429" type="schemas:Generic4291">
+            <xs:annotation>
+              <xs:documentation>Too Many Requests</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="getSession200_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response200" type="schemas:SessionInfo">
+            <xs:annotation>
+              <xs:documentation>Session related information returned in responses.Note that the device object is defined as optional and will only to be returned if provided in createSession. If more than one type of device identifier was provided, only one identifier will be returned (at implementation choice and with the original value provided in createSession).Please note that IP addresses of devices can change and get reused, so the original values may no longer identify the same device. They identified the device at the time of session creation.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="getSession400_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response400" type="schemas:Generic4001">
+            <xs:annotation>
+              <xs:documentation>Bad Request</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="getSession401_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response401" type="schemas:Generic4011">
+            <xs:annotation>
+              <xs:documentation>Unauthorized</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="getSession403_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response403" type="schemas:Generic4011">
+            <xs:annotation>
+              <xs:documentation>Forbidden</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="getSession404_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response404" type="schemas:Generic4011">
+            <xs:annotation>
+              <xs:documentation>Not found</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="getSession429_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response429" type="schemas:Generic4291">
+            <xs:annotation>
+              <xs:documentation>Too Many Requests</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="deleteSession400_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response400" type="schemas:Generic4001">
+            <xs:annotation>
+              <xs:documentation>Bad Request</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="deleteSession401_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response401" type="schemas:Generic4011">
+            <xs:annotation>
+              <xs:documentation>Unauthorized</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="deleteSession403_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response403" type="schemas:Generic4011">
+            <xs:annotation>
+              <xs:documentation>Forbidden</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="deleteSession404_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response404" type="schemas:Generic4011">
+            <xs:annotation>
+              <xs:documentation>Not found</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="deleteSession429_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response429" type="schemas:Generic4291">
+            <xs:annotation>
+              <xs:documentation>Too Many Requests</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="extendQosSessionDuration_Request">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="body" type="schemas:ExtendSessionDuration">
+            <xs:annotation>
+              <xs:documentation>Parameters to extend the duration of an active session</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="extendQosSessionDuration200_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response200" type="schemas:SessionInfo">
+            <xs:annotation>
+              <xs:documentation>Session related information returned in responses.Note that the device object is defined as optional and will only to be returned if provided in createSession. If more than one type of device identifier was provided, only one identifier will be returned (at implementation choice and with the original value provided in createSession).Please note that IP addresses of devices can change and get reused, so the original values may no longer identify the same device. They identified the device at the time of session creation.</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="extendQosSessionDuration400_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response400" type="schemas:GenericExtendSessionDuration4001">
+            <xs:annotation>
+              <xs:documentation>Bad Request</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="extendQosSessionDuration401_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response401" type="schemas:Generic4011">
+            <xs:annotation>
+              <xs:documentation>Unauthorized</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="extendQosSessionDuration403_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response403" type="schemas:Generic4011">
+            <xs:annotation>
+              <xs:documentation>Forbidden</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="extendQosSessionDuration404_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response404" type="schemas:Generic4011">
+            <xs:annotation>
+              <xs:documentation>Not found</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="extendQosSessionDuration409_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response409" type="schemas:SessionStatusConflict4091">
+            <xs:annotation>
+              <xs:documentation>Conflict</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="extendQosSessionDuration429_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response429" type="schemas:Generic4291">
+            <xs:annotation>
+              <xs:documentation>Too Many Requests</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="retrieveSessionsByDevice_Request">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="body" type="schemas:RetrieveSessionsInput">
+            <xs:annotation>
+              <xs:documentation>Parameters to get QoS session information by device</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="retrieveSessionsByDevice200_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" maxOccurs="unbounded" name="response200" type="schemas:SessionInfo">
+            <xs:annotation>
+              <xs:documentation>QoS session information for a given device</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="retrieveSessionsByDevice400_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response400" type="schemas:Generic4001">
+            <xs:annotation>
+              <xs:documentation>Bad Request</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="retrieveSessionsByDevice401_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response401" type="schemas:Generic4011">
+            <xs:annotation>
+              <xs:documentation>Unauthorized</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="retrieveSessionsByDevice403_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response403" type="schemas:Generic4011">
+            <xs:annotation>
+              <xs:documentation>Forbidden</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="retrieveSessionsByDevice404_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response404" type="schemas:GenericDevice4041">
+            <xs:annotation>
+              <xs:documentation>Not found</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="retrieveSessionsByDevice422_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response422" type="schemas:Generic4221">
+            <xs:annotation>
+              <xs:documentation>Unprocessable Content</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="retrieveSessionsByDevice429_Response0">
+        <xs:sequence>
+          <xs:element minOccurs="1" name="response429" type="schemas:Generic4291">
+            <xs:annotation>
+              <xs:documentation>Too Many Requests</xs:documentation>
+            </xs:annotation>
+          </xs:element>
+        </xs:sequence>
+      </xs:complexType>
+    </xs:schema>
+  </grammars>
+  <resources base="http://localhost:9091/quality-on-demand/vwip">
+    <resource id="_sessions" path="/sessions">
+      <method id="createSession" name="POST">
+        <doc title="createSession" xml:lang="en">Create QoS Session to manage latency/throughput priorities
+
+If the qosStatus in the API response is "AVAILABLE" and a notification callback is provided the API consumer will receive in addition to the response a
+`QOS_STATUS_CHANGED` event notification with `qosStatus` as `AVAILABLE`.
+
+If the `qosStatus` in the API response is `REQUESTED`, the client will receive either
+- a `QOS_STATUS_CHANGED` event notification with `qosStatus` as `AVAILABLE` after the network notifies that it has created the requested session, or
+- a `QOS_STATUS_CHANGED` event notification with `qosStatus` as `UNAVAILABLE` and `statusInfo` as `NETWORK_TERMINATED` after the network notifies that it has failed to provide the requested session.
+
+A `QOS_STATUS_CHANGED` event notification with `qosStatus` as `UNAVAILABLE` will also be send if the network terminates the session before the requested duration expired
+
+**NOTES:**
+- In case of a `QOS_STATUS_CHANGED` event with `qosStatus` as `UNAVAILABLE` and `statusInfo` as `NETWORK_TERMINATED` the resources of the QoS session are not directly released, but will get deleted automatically at earliest 360 seconds after the event.
+
+  This behavior allows API consumers which are not receiving notification events but are polling to get the session information with the `qosStatus` `UNAVAILABLE` and `statusInfo` `NETWORK_TERMINATED`. Before a API consumer can attempt to create a new QoD session for the same device and flow period they must release the session resources with an explicit `delete` operation if not yet automatically deleted.
+- The access token may be either 2-legged or 3-legged. See "Identifying the device from the access token" for further information
+  - When the API is invoked using a two-legged access token, the subject will be identified from the optional `device` object, which therefore MUST be provided.
+  - When a three-legged access token is used however, this optional identifier MUST NOT be provided, as the subject will be uniquely identified from the access token.
+</doc>
+        <request>
+          <param name="Content-Type" style="header" type="xsd:string" default="application/json" required="true" fixed="application/json">
+            <doc title="Content-Type" xml:lang="en" />
+          </param>
+          <param name="x-correlator" style="header" type="xsd:string">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:createSession_Request" mediaType="application/json" />
+        </request>
+        <response status="201">
+          <doc title="201" xml:lang="en">Session created</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:createSession201_Response0" mediaType="application/json" />
+        </response>
+        <response status="400">
+          <doc title="400" xml:lang="en">Bad Request when creating a session</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:createSession400_Response0" mediaType="application/json" />
+        </response>
+        <response status="401">
+          <doc title="401" xml:lang="en">Unauthorized</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:createSession401_Response0" mediaType="application/json" />
+        </response>
+        <response status="403">
+          <doc title="403" xml:lang="en">Forbidden</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:createSession403_Response0" mediaType="application/json" />
+        </response>
+        <response status="404">
+          <doc title="404" xml:lang="en">Not found</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:createSession404_Response0" mediaType="application/json" />
+        </response>
+        <response status="409">
+          <doc title="409" xml:lang="en">Conflict</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:createSession409_Response0" mediaType="application/json" />
+        </response>
+        <response status="422">
+          <doc title="422" xml:lang="en">Unprocessable Content</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:createSession422_Response0" mediaType="application/json" />
+        </response>
+        <response status="429">
+          <doc title="429" xml:lang="en">Too Many Requests</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:createSession429_Response0" mediaType="application/json" />
+        </response>
+      </method>
+    </resource>
+    <resource id="_sessionssessionId" path="/sessions/{sessionId}">
+      <param name="sessionId" style="template" type="xsd:string" required="true">
+        <doc title="sessionId" xml:lang="en">Session ID that was obtained from the createSession operation</doc>
+      </param>
+      <param name="sessionId" style="template" type="xsd:string" required="true">
+        <doc title="sessionId" xml:lang="en">Session ID that was obtained from the createSession operation</doc>
+      </param>
+      <method id="getSession" name="GET">
+        <doc title="getSession" xml:lang="en">Querying for QoS session resource information details
+
+**NOTES:**
+- The access token may be either 2-legged or 3-legged.
+- If a 3-legged access token is used, the end user (and device) associated with the session must also be associated with the access token.
+- The session must have been created by the same API client given in the access token
+</doc>
+        <request>
+          <param name="x-correlator" style="header" type="xsd:string">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+        </request>
+        <response status="200">
+          <doc title="200" xml:lang="en">Contains information about active session</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:getSession200_Response0" mediaType="application/json" />
+        </response>
+        <response status="400">
+          <doc title="400" xml:lang="en">Bad Request</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:getSession400_Response0" mediaType="application/json" />
+        </response>
+        <response status="401">
+          <doc title="401" xml:lang="en">Unauthorized</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:getSession401_Response0" mediaType="application/json" />
+        </response>
+        <response status="403">
+          <doc title="403" xml:lang="en">Forbidden</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:getSession403_Response0" mediaType="application/json" />
+        </response>
+        <response status="404">
+          <doc title="404" xml:lang="en">Not found</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:getSession404_Response0" mediaType="application/json" />
+        </response>
+        <response status="429">
+          <doc title="429" xml:lang="en">Too Many Requests</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:getSession429_Response0" mediaType="application/json" />
+        </response>
+      </method>
+      <method id="deleteSession" name="DELETE">
+        <doc title="deleteSession" xml:lang="en">Release resources related to QoS session
+
+If the notification callback is provided and the `qosStatus` of the session was `AVAILABLE` the client will receive in addition to the response a `QOS_STATUS_CHANGED` event with
+- `qosStatus` as `UNAVAILABLE` and
+- `statusInfo` as `DELETE_REQUESTED`
+There will be no notification event if the `qosStatus` was already `UNAVAILABLE`.
+
+**NOTES:**
+- The access token may be either 2-legged or 3-legged.
+- If a 3-legged access token is used, the subject associated with the session must also be associated with the access token.
+- The session must must have been created by the same API consumer given in the access token
+</doc>
+        <request>
+          <param name="x-correlator" style="header" type="xsd:string">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+        </request>
+        <response status="204">
+          <doc title="204" xml:lang="en">Session deleted</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+        </response>
+        <response status="400">
+          <doc title="400" xml:lang="en">Bad Request</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:deleteSession400_Response0" mediaType="application/json" />
+        </response>
+        <response status="401">
+          <doc title="401" xml:lang="en">Unauthorized</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:deleteSession401_Response0" mediaType="application/json" />
+        </response>
+        <response status="403">
+          <doc title="403" xml:lang="en">Forbidden</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:deleteSession403_Response0" mediaType="application/json" />
+        </response>
+        <response status="404">
+          <doc title="404" xml:lang="en">Not found</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:deleteSession404_Response0" mediaType="application/json" />
+        </response>
+        <response status="429">
+          <doc title="429" xml:lang="en">Too Many Requests</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:deleteSession429_Response0" mediaType="application/json" />
+        </response>
+      </method>
+    </resource>
+    <resource id="_sessionssessionIdextend" path="/sessions/{sessionId}/extend">
+      <param name="sessionId" style="template" type="xsd:string" required="true">
+        <doc title="sessionId" xml:lang="en">Session ID that was obtained from the createSession operation</doc>
+      </param>
+      <method id="extendQosSessionDuration" name="POST">
+        <doc title="extendQosSessionDuration" xml:lang="en">Extend the overall session duration of an active QoS session (with qosStatus = AVAILABLE).
+The overall duration of the QoS session, including the additional extended duration, shall not exceed the maximum duration limit fixed for the QoS Profile. If the current duration plus the value of `requestedAdditionalDuration` exceeds the maximum limit, the new overall duration shall be capped to the maximum value allowed.
+An example: For a QoS profile limited to a `maxDuration` of 50,000 seconds, a QoD session was originally created with duration 30,000 seconds. Before the session expires, the developer requests to extend the session by another 30,000 seconds:
+- Previous duration: 30,000 seconds
+- Requested additional duration: 30,000 seconds
+- New overall session duration: 50,000 seconds (the maximum allowed)
+
+**NOTES:**
+- The access token may be either 2-legged or 3-legged.
+- If a 3-legged access token is used, the subject associated with the session must also be associated with the access token.
+- The session must must have been created by the same API consumer given in the access token
+</doc>
+        <request>
+          <param name="Content-Type" style="header" type="xsd:string" default="application/json" required="true" fixed="application/json">
+            <doc title="Content-Type" xml:lang="en" />
+          </param>
+          <param name="x-correlator" style="header" type="xsd:string">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:extendQosSessionDuration_Request" mediaType="application/json" />
+        </request>
+        <response status="200">
+          <doc title="200" xml:lang="en">Contains information about active session</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:extendQosSessionDuration200_Response0" mediaType="application/json" />
+        </response>
+        <response status="400">
+          <doc title="400" xml:lang="en">Bad Request</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:extendQosSessionDuration400_Response0" mediaType="application/json" />
+        </response>
+        <response status="401">
+          <doc title="401" xml:lang="en">Unauthorized</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:extendQosSessionDuration401_Response0" mediaType="application/json" />
+        </response>
+        <response status="403">
+          <doc title="403" xml:lang="en">Forbidden</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:extendQosSessionDuration403_Response0" mediaType="application/json" />
+        </response>
+        <response status="404">
+          <doc title="404" xml:lang="en">Not found</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:extendQosSessionDuration404_Response0" mediaType="application/json" />
+        </response>
+        <response status="409">
+          <doc title="409" xml:lang="en">Conflict</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:extendQosSessionDuration409_Response0" mediaType="application/json" />
+        </response>
+        <response status="429">
+          <doc title="429" xml:lang="en">Too Many Requests</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:extendQosSessionDuration429_Response0" mediaType="application/json" />
+        </response>
+      </method>
+    </resource>
+    <resource id="_retrieve-sessions" path="/retrieve-sessions">
+      <method id="retrieveSessionsByDevice" name="POST">
+        <doc title="retrieveSessionsByDevice" xml:lang="en">Querying for QoS session resource information details for a device
+
+**NOTES:**
+- The access token may be either 2-legged or 3-legged.
+  - If a 3-legged access token is used, the subject associated with the session must also be associated with the access token. In this case the optional `device` parameter MUST NOT be provided in the request.
+  - If a 2-legged access token is used, the device parameter must be provided and identify a device.
+- The session must have been created by the same API consumer given in the access token
+- If no QoS session is found for the requested device, an empty array is returned.
+- This call uses the POST method instead of GET to comply with the CAMARA Commonalities guidelines for sending sensitive or complex data in API calls. Since the device field may contain personally identifiable information, it should not be sent via GET.
+  [CAMARA API Design Guidelines](https://github.com/camaraproject/Commonalities/blob/r2.3/documentation/API-design-guidelines.md#post-or-get-for-transferring-sensitive-or-complex-data)
+</doc>
+        <request>
+          <param name="Content-Type" style="header" type="xsd:string" default="application/json" required="true" fixed="application/json">
+            <doc title="Content-Type" xml:lang="en" />
+          </param>
+          <param name="x-correlator" style="header" type="xsd:string">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:retrieveSessionsByDevice_Request" mediaType="application/json" />
+        </request>
+        <response status="200">
+          <doc title="200" xml:lang="en">Returns the QoS sessions information for a given device. A device may have multiple sessions, thus the response is an array. An empty array is returned if no sessions are found.</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:retrieveSessionsByDevice200_Response0" mediaType="application/json" />
+        </response>
+        <response status="400">
+          <doc title="400" xml:lang="en">Bad Request</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:retrieveSessionsByDevice400_Response0" mediaType="application/json" />
+        </response>
+        <response status="401">
+          <doc title="401" xml:lang="en">Unauthorized</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:retrieveSessionsByDevice401_Response0" mediaType="application/json" />
+        </response>
+        <response status="403">
+          <doc title="403" xml:lang="en">Forbidden</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:retrieveSessionsByDevice403_Response0" mediaType="application/json" />
+        </response>
+        <response status="404">
+          <doc title="404" xml:lang="en">Not found</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:retrieveSessionsByDevice404_Response0" mediaType="application/json" />
+        </response>
+        <response status="422">
+          <doc title="422" xml:lang="en">Unprocessable Content</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:retrieveSessionsByDevice422_Response0" mediaType="application/json" />
+        </response>
+        <response status="429">
+          <doc title="429" xml:lang="en">Too Many Requests</doc>
+          <param name="x-correlator" style="plain" type="xsd:string" required="true">
+            <doc title="x-correlator" xml:lang="en">Correlation id for the different services</doc>
+          </param>
+          <representation element="schemas:retrieveSessionsByDevice429_Response0" mediaType="application/json" />
+        </response>
+      </method>
+    </resource>
+  </resources>
+</application>

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Vodafone Developer Portal</title>
+    <link rel="shortcut icon" href="https://apimaticio.blob.core.windows.net/images/draft-favicons/pngegg%20(1)-e58ceb9b-c8a3-4eae-a65f-4ed39363760f.png">
+    <link href="static/css/portal.css" rel="stylesheet" />
+    
+</head>
+
+<body>
+    <div>
+        <div class="portal-header">
+            <div class="branding-container apimatic-background-color">
+                <div class="logo">
+                    <a href="https://www.vodafone.com/" target="_blank" class="apimatic-light-image">
+                                                    <img src="https://apimaticio.blob.core.windows.net/images/draft-logos/pngegg%20(1)-36d13264-5ce1-478d-bb8a-9ce262acf1e9.png"  alt="logo"  />
+                        </a>
+
+                    <a href="https://www.vodafone.com/" target="_blank" class="apimatic-dark-image">
+                                                    <img src="https://apimaticio.blob.core.windows.net/images/draft-logos/pngegg%20(1)-ca6d5815-8d36-4b43-b5f4-84fbeb47d7c4.png"  alt="logo"  />
+                        </a>
+                        <div class="divider apimatic-border-color"></div>
+
+                    <p class="apimatic-text-color">APIMatic</p>
+                </div>
+            </div>
+            
+        </div>
+        <div class="hosted-api-docs">
+            <div id="apimatic-widget" style="height: 100%; width: 100%;"></div>
+        </div>
+        <div class="portal-footer">
+            
+        </div>
+    </div>
+    <script defer src="https://dxjs.apimatic.io/v7/static/js/portal.v7.js"></script>
+    <script defer src="static/js/portal.js"></script>
+    <script defer src='./static/scripts/recipe.js'></script><script>document.addEventListener('DOMContentLoaded', (event) => {APIMaticDevPortal.ready(({ registerWorkflow }) => {registerWorkflow( 'page:api-recipes/recipe', 'Session Management', createSessionWorkflow); });});</script>
+</body>
+
+</html>

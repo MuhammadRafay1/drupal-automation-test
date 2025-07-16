@@ -1,0 +1,1395 @@
+{
+  "swaggerVersion": "1.2",
+  "basePath": "http://localhost:9091/quality-on-demand/vwip",
+  "resourcePath": "/",
+  "apis": [
+    {
+      "path": "/sessions",
+      "operations": [
+        {
+          "method": "POST",
+          "summary": "Create QoS Session to manage latency/throughput priorities\n\nIf the qosStatus in the API response is \"AVAILABLE\" and a notification callback is provided the API consumer will receive in addition to the response a\n`QOS_STATUS_CHANGED` event notification with `qosStatus` as `AVAILABLE`.\n\nIf the `qosStatus` in the API response is `REQUESTED`, the client will receive either\n- a `QOS_STATUS_CHANGED` event notification with `qosStatus` as `AVAILABLE` after the network notifies that it has created the requested session, or\n- a `QOS_STATUS_CHANGED` event notification with `qosStatus` as `UNAVAILABLE` and `statusInfo` as `NETWORK_TERMINATED` after the network notifies that it has failed to provide the requested session.\n\nA `QOS_STATUS_CHANGED` event notification with `qosStatus` as `UNAVAILABLE` will also be send if the network terminates the session before the requested duration expired\n\n**NOTES:**\n- In case of a `QOS_STATUS_CHANGED` event with `qosStatus` as `UNAVAILABLE` and `statusInfo` as `NETWORK_TERMINATED` the resources of the QoS session are not directly released, but will get deleted automatically at earliest 360 seconds after the event.\n\n  This behavior allows API consumers which are not receiving notification events but are polling to get the session information with the `qosStatus` `UNAVAILABLE` and `statusInfo` `NETWORK_TERMINATED`. Before a API consumer can attempt to create a new QoD session for the same device and flow period they must release the session resources with an explicit `delete` operation if not yet automatically deleted.\n- The access token may be either 2-legged or 3-legged. See \"Identifying the device from the access token\" for further information\n  - When the API is invoked using a two-legged access token, the subject will be identified from the optional `device` object, which therefore MUST be provided.\n  - When a three-legged access token is used however, this optional identifier MUST NOT be provided, as the subject will be uniquely identified from the access token.\n",
+          "nickname": "createSession",
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "description": "",
+              "paramType": "header",
+              "required": true,
+              "allowMultiple": false,
+              "defaultValue": "application/json",
+              "uniqueItems": false,
+              "type": "string"
+            },
+            {
+              "name": "body",
+              "description": "Parameters to create a new session",
+              "paramType": "body",
+              "required": true,
+              "allowMultiple": false,
+              "uniqueItems": false,
+              "type": "CreateSession"
+            },
+            {
+              "name": "x-correlator",
+              "description": "Correlation id for the different services",
+              "paramType": "header",
+              "required": false,
+              "allowMultiple": false,
+              "uniqueItems": false,
+              "type": "string"
+            }
+          ],
+          "authorizations": {
+            "openId": [
+              {
+                "scope": "quality-on-demand:sessions:create"
+              }
+            ]
+          },
+          "produces": [
+            "application/json"
+          ],
+          "consumes": [
+            "application/json"
+          ],
+          "responseMessages": [
+            {
+              "code": 400,
+              "responseModel": "CreateSessionBadRequest4001",
+              "message": "Bad Request when creating a session"
+            },
+            {
+              "code": 401,
+              "responseModel": "Generic4011",
+              "message": "Unauthorized"
+            },
+            {
+              "code": 403,
+              "responseModel": "Generic4011",
+              "message": "Forbidden"
+            },
+            {
+              "code": 404,
+              "responseModel": "GenericDevice4041",
+              "message": "Not found"
+            },
+            {
+              "code": 409,
+              "responseModel": "SessionInConflict4091",
+              "message": "Conflict"
+            },
+            {
+              "code": 422,
+              "responseModel": "CreateSessionUnprocessableEntity4221",
+              "message": "Unprocessable Content"
+            },
+            {
+              "code": 429,
+              "responseModel": "Generic4291",
+              "message": "Too Many Requests"
+            }
+          ],
+          "uniqueItems": false,
+          "$ref": "SessionInfo"
+        }
+      ]
+    },
+    {
+      "path": "/sessions/{sessionId}",
+      "operations": [
+        {
+          "method": "GET",
+          "summary": "Querying for QoS session resource information details\n\n**NOTES:**\n- The access token may be either 2-legged or 3-legged.\n- If a 3-legged access token is used, the end user (and device) associated with the session must also be associated with the access token.\n- The session must have been created by the same API client given in the access token\n",
+          "nickname": "getSession",
+          "parameters": [
+            {
+              "name": "sessionId",
+              "description": "Session ID that was obtained from the createSession operation",
+              "paramType": "path",
+              "required": true,
+              "allowMultiple": false,
+              "uniqueItems": false,
+              "type": "string"
+            },
+            {
+              "name": "x-correlator",
+              "description": "Correlation id for the different services",
+              "paramType": "header",
+              "required": false,
+              "allowMultiple": false,
+              "uniqueItems": false,
+              "type": "string"
+            }
+          ],
+          "authorizations": {
+            "openId": [
+              {
+                "scope": "quality-on-demand:sessions:read"
+              }
+            ]
+          },
+          "produces": [
+            "application/json"
+          ],
+          "responseMessages": [
+            {
+              "code": 400,
+              "responseModel": "Generic4001",
+              "message": "Bad Request"
+            },
+            {
+              "code": 401,
+              "responseModel": "Generic4011",
+              "message": "Unauthorized"
+            },
+            {
+              "code": 403,
+              "responseModel": "Generic4011",
+              "message": "Forbidden"
+            },
+            {
+              "code": 404,
+              "responseModel": "Generic4011",
+              "message": "Not found"
+            },
+            {
+              "code": 429,
+              "responseModel": "Generic4291",
+              "message": "Too Many Requests"
+            }
+          ],
+          "uniqueItems": false,
+          "$ref": "SessionInfo"
+        },
+        {
+          "method": "DELETE",
+          "summary": "Release resources related to QoS session\n\nIf the notification callback is provided and the `qosStatus` of the session was `AVAILABLE` the client will receive in addition to the response a `QOS_STATUS_CHANGED` event with\n- `qosStatus` as `UNAVAILABLE` and\n- `statusInfo` as `DELETE_REQUESTED`\nThere will be no notification event if the `qosStatus` was already `UNAVAILABLE`.\n\n**NOTES:**\n- The access token may be either 2-legged or 3-legged.\n- If a 3-legged access token is used, the subject associated with the session must also be associated with the access token.\n- The session must must have been created by the same API consumer given in the access token\n",
+          "nickname": "deleteSession",
+          "parameters": [
+            {
+              "name": "sessionId",
+              "description": "Session ID that was obtained from the createSession operation",
+              "paramType": "path",
+              "required": true,
+              "allowMultiple": false,
+              "uniqueItems": false,
+              "type": "string"
+            },
+            {
+              "name": "x-correlator",
+              "description": "Correlation id for the different services",
+              "paramType": "header",
+              "required": false,
+              "allowMultiple": false,
+              "uniqueItems": false,
+              "type": "string"
+            }
+          ],
+          "authorizations": {
+            "openId": [
+              {
+                "scope": "quality-on-demand:sessions:delete"
+              }
+            ]
+          },
+          "produces": [
+            "application/json"
+          ],
+          "responseMessages": [
+            {
+              "code": 400,
+              "responseModel": "Generic4001",
+              "message": "Bad Request"
+            },
+            {
+              "code": 401,
+              "responseModel": "Generic4011",
+              "message": "Unauthorized"
+            },
+            {
+              "code": 403,
+              "responseModel": "Generic4011",
+              "message": "Forbidden"
+            },
+            {
+              "code": 404,
+              "responseModel": "Generic4011",
+              "message": "Not found"
+            },
+            {
+              "code": 429,
+              "responseModel": "Generic4291",
+              "message": "Too Many Requests"
+            }
+          ],
+          "uniqueItems": false,
+          "type": "void"
+        }
+      ]
+    },
+    {
+      "path": "/sessions/{sessionId}/extend",
+      "operations": [
+        {
+          "method": "POST",
+          "summary": "Extend the overall session duration of an active QoS session (with qosStatus = AVAILABLE).\nThe overall duration of the QoS session, including the additional extended duration, shall not exceed the maximum duration limit fixed for the QoS Profile. If the current duration plus the value of `requestedAdditionalDuration` exceeds the maximum limit, the new overall duration shall be capped to the maximum value allowed.\nAn example: For a QoS profile limited to a `maxDuration` of 50,000 seconds, a QoD session was originally created with duration 30,000 seconds. Before the session expires, the developer requests to extend the session by another 30,000 seconds:\n- Previous duration: 30,000 seconds\n- Requested additional duration: 30,000 seconds\n- New overall session duration: 50,000 seconds (the maximum allowed)\n\n**NOTES:**\n- The access token may be either 2-legged or 3-legged.\n- If a 3-legged access token is used, the subject associated with the session must also be associated with the access token.\n- The session must must have been created by the same API consumer given in the access token\n",
+          "nickname": "extendQosSessionDuration",
+          "parameters": [
+            {
+              "name": "sessionId",
+              "description": "Session ID that was obtained from the createSession operation",
+              "paramType": "path",
+              "required": true,
+              "allowMultiple": false,
+              "uniqueItems": false,
+              "type": "string"
+            },
+            {
+              "name": "Content-Type",
+              "description": "",
+              "paramType": "header",
+              "required": true,
+              "allowMultiple": false,
+              "defaultValue": "application/json",
+              "uniqueItems": false,
+              "type": "string"
+            },
+            {
+              "name": "body",
+              "description": "Parameters to extend the duration of an active session",
+              "paramType": "body",
+              "required": true,
+              "allowMultiple": false,
+              "uniqueItems": false,
+              "type": "ExtendSessionDuration"
+            },
+            {
+              "name": "x-correlator",
+              "description": "Correlation id for the different services",
+              "paramType": "header",
+              "required": false,
+              "allowMultiple": false,
+              "uniqueItems": false,
+              "type": "string"
+            }
+          ],
+          "authorizations": {
+            "openId": [
+              {
+                "scope": "quality-on-demand:sessions:update"
+              }
+            ]
+          },
+          "produces": [
+            "application/json"
+          ],
+          "consumes": [
+            "application/json"
+          ],
+          "responseMessages": [
+            {
+              "code": 400,
+              "responseModel": "GenericExtendSessionDuration4001",
+              "message": "Bad Request"
+            },
+            {
+              "code": 401,
+              "responseModel": "Generic4011",
+              "message": "Unauthorized"
+            },
+            {
+              "code": 403,
+              "responseModel": "Generic4011",
+              "message": "Forbidden"
+            },
+            {
+              "code": 404,
+              "responseModel": "Generic4011",
+              "message": "Not found"
+            },
+            {
+              "code": 409,
+              "responseModel": "SessionStatusConflict4091",
+              "message": "Conflict"
+            },
+            {
+              "code": 429,
+              "responseModel": "Generic4291",
+              "message": "Too Many Requests"
+            }
+          ],
+          "uniqueItems": false,
+          "$ref": "SessionInfo"
+        }
+      ]
+    },
+    {
+      "path": "/retrieve-sessions",
+      "operations": [
+        {
+          "method": "POST",
+          "summary": "Querying for QoS session resource information details for a device\n\n**NOTES:**\n- The access token may be either 2-legged or 3-legged.\n  - If a 3-legged access token is used, the subject associated with the session must also be associated with the access token. In this case the optional `device` parameter MUST NOT be provided in the request.\n  - If a 2-legged access token is used, the device parameter must be provided and identify a device.\n- The session must have been created by the same API consumer given in the access token\n- If no QoS session is found for the requested device, an empty array is returned.\n- This call uses the POST method instead of GET to comply with the CAMARA Commonalities guidelines for sending sensitive or complex data in API calls. Since the device field may contain personally identifiable information, it should not be sent via GET.\n  [CAMARA API Design Guidelines](https://github.com/camaraproject/Commonalities/blob/r2.3/documentation/API-design-guidelines.md#post-or-get-for-transferring-sensitive-or-complex-data)\n",
+          "nickname": "retrieveSessionsByDevice",
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "description": "",
+              "paramType": "header",
+              "required": true,
+              "allowMultiple": false,
+              "defaultValue": "application/json",
+              "uniqueItems": false,
+              "type": "string"
+            },
+            {
+              "name": "body",
+              "description": "Parameters to get QoS session information by device",
+              "paramType": "body",
+              "required": true,
+              "allowMultiple": false,
+              "uniqueItems": false,
+              "type": "RetrieveSessionsInput"
+            },
+            {
+              "name": "x-correlator",
+              "description": "Correlation id for the different services",
+              "paramType": "header",
+              "required": false,
+              "allowMultiple": false,
+              "uniqueItems": false,
+              "type": "string"
+            }
+          ],
+          "authorizations": {
+            "openId": [
+              {
+                "scope": "quality-on-demand:sessions:retrieve-by-device"
+              }
+            ]
+          },
+          "produces": [
+            "application/json"
+          ],
+          "consumes": [
+            "application/json"
+          ],
+          "responseMessages": [
+            {
+              "code": 400,
+              "responseModel": "Generic4001",
+              "message": "Bad Request"
+            },
+            {
+              "code": 401,
+              "responseModel": "Generic4011",
+              "message": "Unauthorized"
+            },
+            {
+              "code": 403,
+              "responseModel": "Generic4011",
+              "message": "Forbidden"
+            },
+            {
+              "code": 404,
+              "responseModel": "GenericDevice4041",
+              "message": "Not found"
+            },
+            {
+              "code": 422,
+              "responseModel": "Generic4221",
+              "message": "Unprocessable Content"
+            },
+            {
+              "code": 429,
+              "responseModel": "Generic4291",
+              "message": "Too Many Requests"
+            }
+          ],
+          "items": {
+            "$ref": "SessionInfo"
+          },
+          "uniqueItems": false,
+          "type": "array"
+        }
+      ]
+    }
+  ],
+  "models": {
+    "BaseSessionInfo": {
+      "id": "BaseSessionInfo",
+      "description": "Common attributes of a QoD session",
+      "required": [
+        "applicationServer",
+        "qosProfile"
+      ],
+      "properties": {
+        "device": {
+          "description": "End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`\n* `phoneNumber`\n* `networkAccessIdentifier`\n\nNOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.\nNOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines.",
+          "uniqueItems": false,
+          "$ref": "Device"
+        },
+        "applicationServer": {
+          "description": "A server hosting backend applications to deliver some business logic to clients.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`",
+          "uniqueItems": false,
+          "$ref": "ApplicationServer"
+        },
+        "devicePorts": {
+          "description": "The ports used locally by the device for flows to which the requested QoS profile should apply. If omitted, then the qosProfile will apply to all flows between the device and the specified application server address and ports",
+          "uniqueItems": false,
+          "$ref": "PortsSpec"
+        },
+        "applicationServerPorts": {
+          "description": "A list of single ports or port ranges on the application server",
+          "uniqueItems": false,
+          "$ref": "PortsSpec"
+        },
+        "qosProfile": {
+          "description": "A unique name for identifying a specific QoS profile.\nThis may follow different formats depending on the API provider implementation.\nSome options addresses:\n  - A UUID style string\n  - Support for predefined profiles QOS_S, QOS_M, QOS_L, and QOS_E\n  - A searchable descriptive name\nThe set of QoS Profiles that an API provider is offering may be retrieved by means of the QoS Profile API (qos-profile) or agreed on onboarding time.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "sink": {
+          "description": "The address to which events about all status changes of the session (e.g. session termination) shall be delivered using the selected protocol.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "sinkCredential": {
+          "description": "A sink credential provides authentication or authorization information necessary to enable delivery of events to a target.",
+          "uniqueItems": false,
+          "$ref": "SinkCredential"
+        }
+      }
+    },
+    "SessionInfo": {
+      "id": "SessionInfo",
+      "description": "Session related information returned in responses.\nNote that the device object is defined as optional and will only to be returned if provided in createSession. If more than one type of device identifier was provided, only one identifier will be returned (at implementation choice and with the original value provided in createSession).\nPlease note that IP addresses of devices can change and get reused, so the original values may no longer identify the same device. They identified the device at the time of session creation.",
+      "required": [
+        "applicationServer",
+        "qosProfile",
+        "sessionId",
+        "duration",
+        "qosStatus"
+      ],
+      "properties": {
+        "device": {
+          "description": "End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`\n* `phoneNumber`\n* `networkAccessIdentifier`\n\nNOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.\nNOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines.",
+          "uniqueItems": false,
+          "$ref": "Device"
+        },
+        "applicationServer": {
+          "description": "A server hosting backend applications to deliver some business logic to clients.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`",
+          "uniqueItems": false,
+          "$ref": "ApplicationServer"
+        },
+        "devicePorts": {
+          "description": "The ports used locally by the device for flows to which the requested QoS profile should apply. If omitted, then the qosProfile will apply to all flows between the device and the specified application server address and ports",
+          "uniqueItems": false,
+          "$ref": "PortsSpec"
+        },
+        "applicationServerPorts": {
+          "description": "A list of single ports or port ranges on the application server",
+          "uniqueItems": false,
+          "$ref": "PortsSpec"
+        },
+        "qosProfile": {
+          "description": "A unique name for identifying a specific QoS profile.\nThis may follow different formats depending on the API provider implementation.\nSome options addresses:\n  - A UUID style string\n  - Support for predefined profiles QOS_S, QOS_M, QOS_L, and QOS_E\n  - A searchable descriptive name\nThe set of QoS Profiles that an API provider is offering may be retrieved by means of the QoS Profile API (qos-profile) or agreed on onboarding time.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "sink": {
+          "description": "The address to which events about all status changes of the session (e.g. session termination) shall be delivered using the selected protocol.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "sinkCredential": {
+          "description": "A sink credential provides authentication or authorization information necessary to enable delivery of events to a target.",
+          "uniqueItems": false,
+          "$ref": "SinkCredential"
+        },
+        "sessionId": {
+          "description": "Session ID in UUID format",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "duration": {
+          "description": "Session duration in seconds. Implementations can grant the requested session duration or set a different duration, based on network policies or conditions.\n- When `qosStatus` is \"REQUESTED\", the value is the duration to be scheduled, granted by the implementation.\n- When `qosStatus` is AVAILABLE\", the value is the overall duration since `startedAt. When the session is extended, the value is the new overall duration of the session.\n- When `qosStatus` is \"UNAVAILABLE\", the value is the overall effective duration since `startedAt` until the session was terminated.",
+          "minimum": "1",
+          "maximum": "",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        "startedAt": {
+          "description": "Date and time when the QoS status became \"AVAILABLE\". Not to be returned when `qosStatus` is \"REQUESTED\". Format must follow RFC 3339 and must indicate time zone (UTC or local).",
+          "uniqueItems": false,
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "description": "Date and time of the QoS session expiration. Format must follow RFC 3339 and must indicate time zone (UTC or local).\n- When `qosStatus` is \"AVAILABLE\", it is the limit time when the session is scheduled to finnish, if not terminated by other means.\n- When `qosStatus` is \"UNAVAILABLE\", it is the time when the session was terminated.\n- Not to be returned when `qosStatus` is \"REQUESTED\".\nWhen the session is extended, the value is the new expiration time of the session.",
+          "uniqueItems": false,
+          "type": "string",
+          "format": "date-time"
+        },
+        "qosStatus": {
+          "description": "The current status of the requested QoS session. The status can be one of the following:\n* `REQUESTED` - QoS has been requested by creating a session\n* `AVAILABLE` - The requested QoS has been provided by the network\n* `UNAVAILABLE` - The requested QoS cannot be provided by the network due to some reason",
+          "enum": [
+            "REQUESTED",
+            "AVAILABLE",
+            "UNAVAILABLE"
+          ],
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "statusInfo": {
+          "description": "Reason for the new `qosStatus`. Currently `statusInfo` is only applicable when `qosStatus` is 'UNAVAILABLE'.\n* `DURATION_EXPIRED` - Session terminated due to requested duration expired\n* `NETWORK_TERMINATED` - Network terminated the session before the requested duration expired\n* `DELETE_REQUESTED`- User requested the deletion of the session before the requested duration expired",
+          "enum": [
+            "DURATION_EXPIRED",
+            "NETWORK_TERMINATED",
+            "DELETE_REQUESTED"
+          ],
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "CreateSession": {
+      "id": "CreateSession",
+      "description": "Attributes required to create a session",
+      "required": [
+        "applicationServer",
+        "qosProfile",
+        "duration"
+      ],
+      "properties": {
+        "device": {
+          "description": "End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`\n* `phoneNumber`\n* `networkAccessIdentifier`\n\nNOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.\nNOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines.",
+          "uniqueItems": false,
+          "$ref": "Device"
+        },
+        "applicationServer": {
+          "description": "A server hosting backend applications to deliver some business logic to clients.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`",
+          "uniqueItems": false,
+          "$ref": "ApplicationServer"
+        },
+        "devicePorts": {
+          "description": "The ports used locally by the device for flows to which the requested QoS profile should apply. If omitted, then the qosProfile will apply to all flows between the device and the specified application server address and ports",
+          "uniqueItems": false,
+          "$ref": "PortsSpec"
+        },
+        "applicationServerPorts": {
+          "description": "A list of single ports or port ranges on the application server",
+          "uniqueItems": false,
+          "$ref": "PortsSpec"
+        },
+        "qosProfile": {
+          "description": "A unique name for identifying a specific QoS profile.\nThis may follow different formats depending on the API provider implementation.\nSome options addresses:\n  - A UUID style string\n  - Support for predefined profiles QOS_S, QOS_M, QOS_L, and QOS_E\n  - A searchable descriptive name\nThe set of QoS Profiles that an API provider is offering may be retrieved by means of the QoS Profile API (qos-profile) or agreed on onboarding time.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "sink": {
+          "description": "The address to which events about all status changes of the session (e.g. session termination) shall be delivered using the selected protocol.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "sinkCredential": {
+          "description": "A sink credential provides authentication or authorization information necessary to enable delivery of events to a target.",
+          "uniqueItems": false,
+          "$ref": "SinkCredential"
+        },
+        "duration": {
+          "description": "Requested session duration in seconds. Value may be explicitly limited for the QoS profile, as specified in the Qos Profile (see qos-profile API). Implementations can grant the requested session duration or set a different duration, based on network policies or conditions.",
+          "minimum": "1",
+          "maximum": "",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "PortsSpec": {
+      "id": "PortsSpec",
+      "description": "Specification of several TCP or UDP ports",
+      "required": [],
+      "properties": {
+        "ranges": {
+          "description": "Range of TCP or UDP ports",
+          "items": {
+            "$ref": "Range"
+          },
+          "uniqueItems": false,
+          "type": "array"
+        },
+        "ports": {
+          "description": "Array of TCP or UDP ports",
+          "items": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "minimum": "0",
+          "maximum": "65535",
+          "uniqueItems": false,
+          "type": "array"
+        }
+      }
+    },
+    "SinkCredential": {
+      "id": "SinkCredential",
+      "required": [
+        "credentialType"
+      ],
+      "properties": {
+        "credentialType": {
+          "description": "",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      },
+      "subTypes": [
+        "PlainCredential",
+        "AccessTokenCredential",
+        "RefreshTokenCredential"
+      ],
+      "discriminator": "credentialType"
+    },
+    "PlainCredential": {
+      "id": "PlainCredential",
+      "description": "A plain credential as a combination of an identifier and a secret. MUST not be used in this API version.",
+      "required": [
+        "identifier",
+        "secret"
+      ],
+      "properties": {
+        "identifier": {
+          "description": "The identifier might be an account or username.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "secret": {
+          "description": "The secret might be a password or passphrase.",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "AccessTokenCredential": {
+      "id": "AccessTokenCredential",
+      "description": "An access token credential.",
+      "required": [
+        "accessToken",
+        "accessTokenExpiresUtc",
+        "accessTokenType"
+      ],
+      "properties": {
+        "accessToken": {
+          "description": "REQUIRED. An access token is a previously acquired token granting access to the target resource.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "accessTokenExpiresUtc": {
+          "description": "REQUIRED. An absolute (UTC) timestamp at which the token shall be considered expired. Token expiration should occur\nafter the termination of the requested session, allowing the client to be notified of any changes during the\nsessions's existence. If the token expires while the session is still active, the client will stop receiving notifications.\nIf the access token is a JWT and registered \"exp\" (Expiration Time) claim is present, the two expiry times should match.\nIt must follow [RFC 3339](https://datatracker.ietf.org/doc/html/rfc3339#section-5.6) and must have time zone.\nRecommended format is yyyy-MM-dd'T'HH:mm:ss.SSSZ (i.e. which allows 2023-07-03T14:27:08.312+02:00 or 2023-07-03T12:27:08.312Z)",
+          "uniqueItems": false,
+          "type": "string",
+          "format": "date-time"
+        },
+        "accessTokenType": {
+          "description": "REQUIRED. Type of the access token (See [OAuth 2.0](https://tools.ietf.org/html/rfc6749#section-7.1)). For the current version of the API the type MUST be set to `Bearer`.",
+          "defaultValue": "bearer",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "RefreshTokenCredential": {
+      "id": "RefreshTokenCredential",
+      "description": "An access token credential with a refresh token. MUST not be used in this API version.",
+      "required": [
+        "accessToken",
+        "accessTokenExpiresUtc",
+        "accessTokenType",
+        "refreshToken",
+        "refreshTokenEndpoint"
+      ],
+      "properties": {
+        "accessToken": {
+          "description": "REQUIRED. An access token is a previously acquired token granting access to the target resource.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "accessTokenExpiresUtc": {
+          "description": "REQUIRED. An absolute UTC instant at which the token shall be considered expired.",
+          "uniqueItems": false,
+          "type": "string",
+          "format": "date-time"
+        },
+        "accessTokenType": {
+          "description": "REQUIRED. Type of the access token (See [OAuth 2.0](https://tools.ietf.org/html/rfc6749#section-7.1)).",
+          "defaultValue": "bearer",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "refreshToken": {
+          "description": "REQUIRED. An refresh token credential used to acquire access tokens.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "refreshTokenEndpoint": {
+          "description": "REQUIRED. A URL at which the refresh token can be traded for an access token.",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "ExtendSessionDuration": {
+      "id": "ExtendSessionDuration",
+      "description": "Attributes required to extend the duration of an active session",
+      "required": [
+        "requestedAdditionalDuration"
+      ],
+      "properties": {
+        "requestedAdditionalDuration": {
+          "description": "Additional duration in seconds to be added to the current session duration. The overall session duration, including extensions, shall not exceed the maximum duration limit for the QoS Profile.",
+          "minimum": "1",
+          "maximum": "",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "CloudEvent": {
+      "id": "CloudEvent",
+      "description": "Event compliant with the CloudEvents specification",
+      "required": [
+        "type",
+        "id",
+        "source",
+        "specversion",
+        "time"
+      ],
+      "properties": {
+        "type": {
+          "description": "",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "id": {
+          "description": "Identifier of this event, that must be unique in the source context.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "source": {
+          "description": "Identifies the context in which an event happened in the specific provider implementation.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "specversion": {
+          "description": "Version of the specification to which this event conforms (must be 1.0 if it conforms to Cloudevents 1.0.2 version)",
+          "defaultValue": "1.0",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "datacontenttype": {
+          "description": "media-type that describes the event payload encoding, must be \"application/json\" for CAMARA APIs",
+          "enum": [
+            "application/json"
+          ],
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "data": {
+          "description": "Event notification details payload, which depends on the event type",
+          "uniqueItems": false,
+          "type": "object"
+        },
+        "time": {
+          "description": "Timestamp of when the occurrence happened. It must follow RFC 3339",
+          "uniqueItems": false,
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "subTypes": [
+        "EventQosStatusChanged"
+      ],
+      "discriminator": "type"
+    },
+    "EventQosStatusChanged": {
+      "id": "EventQosStatusChanged",
+      "description": "Event to notify a QoS status change",
+      "required": [
+        "data"
+      ],
+      "properties": {
+        "data": {
+          "description": "Event details depending on the event type",
+          "uniqueItems": false,
+          "$ref": "Data"
+        }
+      }
+    },
+    "Device": {
+      "id": "Device",
+      "description": "End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`\n* `phoneNumber`\n* `networkAccessIdentifier`\n\nNOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.\nNOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines.",
+      "required": [],
+      "properties": {
+        "phoneNumber": {
+          "description": "A public identifier addressing a telephone subscription. In mobile networks it corresponds to the MSISDN (Mobile Station International Subscriber Directory Number). In order to be globally unique it has to be formatted in international format, according to E.164 standard, prefixed with '+'.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "networkAccessIdentifier": {
+          "description": "A public identifier addressing a subscription in a mobile network. In 3GPP terminology, it corresponds to the GPSI formatted with the External Identifier ({Local Identifier}@{Domain Identifier}). Unlike the telephone number, the network access identifier is not subjected to portability ruling in force, and is individually managed by each operator.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "ipv4Address": {
+          "description": "The device should be identified by either the public (observed) IP address and port as seen by the application server, or the private (local) and any public (observed) IP addresses in use by the device (this information can be obtained by various means, for example from some DNS servers).\n\nIf the allocated and observed IP addresses are the same (i.e. NAT is not in use) then  the same address should be specified for both publicAddress and privateAddress.\n\nIf NAT64 is in use, the device should be identified by its publicAddress and publicPort, or separately by its allocated IPv6 address (field ipv6Address of the Device object)\n\nIn all cases, publicAddress must be specified, along with at least one of either privateAddress or publicPort, dependent upon which is known. In general, mobile devices cannot be identified by their public IPv4 address alone.",
+          "uniqueItems": false,
+          "$ref": "DeviceIpv4Addr2"
+        },
+        "ipv6Address": {
+          "description": "The device should be identified by the observed IPv6 address, or by any single IPv6 address from within the subnet allocated to the device (e.g. adding ::0 to the /64 prefix).\n\nThe session shall apply to all IP flows between the device subnet and the specified application server, unless further restricted by the optional parameters devicePorts or applicationServerPorts.",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "ApplicationServer": {
+      "id": "ApplicationServer",
+      "description": "A server hosting backend applications to deliver some business logic to clients.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`",
+      "required": [],
+      "properties": {
+        "ipv4Address": {
+          "description": "IPv4 address may be specified in form <address/mask> as:\n  - address - an IPv4 number in dotted-quad form 1.2.3.4. Only this exact IP number will match the flow control rule.\n  - address/mask - an IP number as above with a mask width of the form 1.2.3.4/24.\n    In this case, all IP numbers from 1.2.3.0 to 1.2.3.255 will match. The bit width MUST be valid for the IP version.",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "ipv6Address": {
+          "description": "IPv6 address may be specified in form <address/mask> as:\n  - address - The /128 subnet is optional for single addresses:\n    - 2001:db8:85a3:8d3:1319:8a2e:370:7344\n    - 2001:db8:85a3:8d3:1319:8a2e:370:7344/128\n  - address/mask - an IP v6 number with a mask:\n    - 2001:db8:85a3:8d3::0/64\n    - 2001:db8:85a3:8d3::/64",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "DeviceIpv4Addr": {
+      "id": "DeviceIpv4Addr",
+      "required": [
+        "publicAddress",
+        "privateAddress"
+      ],
+      "properties": {
+        "publicAddress": {
+          "description": "A single IPv4 address with no subnet mask",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "privateAddress": {
+          "description": "A single IPv4 address with no subnet mask",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "publicPort": {
+          "description": "TCP or UDP port number",
+          "minimum": "0",
+          "maximum": "65535",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "ErrorInfo": {
+      "id": "ErrorInfo",
+      "description": "Common schema for errors",
+      "required": [
+        "status",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "status": {
+          "description": "HTTP status code returned along with this error response",
+          "minimum": "",
+          "maximum": "",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        "code": {
+          "description": "Code given to this error",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "message": {
+          "description": "Detailed error description",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "RetrieveSessionsInput": {
+      "id": "RetrieveSessionsInput",
+      "description": "Parameters to get QoS session information by device",
+      "required": [],
+      "properties": {
+        "device": {
+          "description": "End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`\n* `phoneNumber`\n* `networkAccessIdentifier`\n\nNOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.\nNOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines.",
+          "uniqueItems": false,
+          "$ref": "Device"
+        }
+      }
+    },
+    "CreateSessionBadRequest4001": {
+      "id": "CreateSessionBadRequest4001",
+      "required": [
+        "status",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "status": {
+          "description": "HTTP status code returned along with this error response",
+          "defaultValue": "400",
+          "minimum": "",
+          "maximum": "",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        "code": {
+          "description": "Code given to this error",
+          "enum": [
+            "INVALID_ARGUMENT",
+            "OUT_OF_RANGE",
+            "QUALITY_ON_DEMAND.DURATION_OUT_OF_RANGE",
+            "INVALID_CREDENTIAL",
+            "INVALID_TOKEN"
+          ],
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "message": {
+          "description": "Detailed error description",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "CreateSessionUnprocessableEntity4221": {
+      "id": "CreateSessionUnprocessableEntity4221",
+      "required": [
+        "status",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "status": {
+          "description": "HTTP status code returned along with this error response",
+          "defaultValue": "422",
+          "minimum": "",
+          "maximum": "",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        "code": {
+          "description": "Code given to this error",
+          "enum": [
+            "IDENTIFIER_MISMATCH",
+            "SERVICE_NOT_APPLICABLE",
+            "MISSING_IDENTIFIER",
+            "UNSUPPORTED_IDENTIFIER",
+            "UNNECESSARY_IDENTIFIER",
+            "QUALITY_ON_DEMAND.QOS_PROFILE_NOT_APPLICABLE"
+          ],
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "message": {
+          "description": "Detailed error description",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "Data": {
+      "id": "Data",
+      "description": "Event details depending on the event type",
+      "required": [
+        "sessionId",
+        "qosStatus"
+      ],
+      "properties": {
+        "sessionId": {
+          "description": "Session ID in UUID format",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "qosStatus": {
+          "description": "The current status of a requested or previously available session. Applicable values in the event are:\n*  `AVAILABLE` - The requested QoS has been provided by the network.\n*  `UNAVAILABLE` - A requested or previously available QoS session is now unavailable. `statusInfo` may provide additional information about the reason for the unavailability.",
+          "enum": [
+            "AVAILABLE",
+            "UNAVAILABLE"
+          ],
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "statusInfo": {
+          "description": "Reason for the new `qosStatus`. Currently `statusInfo` is only applicable when `qosStatus` is 'UNAVAILABLE'.\n* `DURATION_EXPIRED` - Session terminated due to requested duration expired\n* `NETWORK_TERMINATED` - Network terminated the session before the requested duration expired\n* `DELETE_REQUESTED`- User requested the deletion of the session before the requested duration expired",
+          "enum": [
+            "DURATION_EXPIRED",
+            "NETWORK_TERMINATED",
+            "DELETE_REQUESTED"
+          ],
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "DeviceIpv4Addr1": {
+      "id": "DeviceIpv4Addr1",
+      "required": [
+        "publicAddress",
+        "publicPort"
+      ],
+      "properties": {
+        "publicAddress": {
+          "description": "A single IPv4 address with no subnet mask",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "privateAddress": {
+          "description": "A single IPv4 address with no subnet mask",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "publicPort": {
+          "description": "TCP or UDP port number",
+          "minimum": "0",
+          "maximum": "65535",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "DeviceIpv4Addr2": {
+      "id": "DeviceIpv4Addr2",
+      "description": "The device should be identified by either the public (observed) IP address and port as seen by the application server, or the private (local) and any public (observed) IP addresses in use by the device (this information can be obtained by various means, for example from some DNS servers).\n\nIf the allocated and observed IP addresses are the same (i.e. NAT is not in use) then  the same address should be specified for both publicAddress and privateAddress.\n\nIf NAT64 is in use, the device should be identified by its publicAddress and publicPort, or separately by its allocated IPv6 address (field ipv6Address of the Device object)\n\nIn all cases, publicAddress must be specified, along with at least one of either privateAddress or publicPort, dependent upon which is known. In general, mobile devices cannot be identified by their public IPv4 address alone.",
+      "required": [],
+      "properties": {
+        "publicAddress": {
+          "description": "A single IPv4 address with no subnet mask",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "privateAddress": {
+          "description": "A single IPv4 address with no subnet mask",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "publicPort": {
+          "description": "TCP or UDP port number",
+          "minimum": "0",
+          "maximum": "65535",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "Generic4001": {
+      "id": "Generic4001",
+      "required": [
+        "status",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "status": {
+          "description": "HTTP status code returned along with this error response",
+          "defaultValue": "400",
+          "minimum": "",
+          "maximum": "",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        "code": {
+          "description": "Code given to this error",
+          "enum": [
+            "INVALID_ARGUMENT",
+            "OUT_OF_RANGE"
+          ],
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "message": {
+          "description": "Detailed error description",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "Generic4011": {
+      "id": "Generic4011",
+      "required": [
+        "status",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "status": {
+          "description": "HTTP status code returned along with this error response",
+          "defaultValue": "401",
+          "minimum": "",
+          "maximum": "",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        "code": {
+          "description": "Code given to this error",
+          "defaultValue": "UNAUTHENTICATED",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "message": {
+          "description": "Detailed error description",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "Generic4221": {
+      "id": "Generic4221",
+      "required": [
+        "status",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "status": {
+          "description": "HTTP status code returned along with this error response",
+          "defaultValue": "422",
+          "minimum": "",
+          "maximum": "",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        "code": {
+          "description": "Code given to this error",
+          "enum": [
+            "IDENTIFIER_MISMATCH",
+            "SERVICE_NOT_APPLICABLE",
+            "MISSING_IDENTIFIER",
+            "UNSUPPORTED_IDENTIFIER",
+            "UNNECESSARY_IDENTIFIER"
+          ],
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "message": {
+          "description": "Detailed error description",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "Generic4291": {
+      "id": "Generic4291",
+      "required": [
+        "status",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "status": {
+          "description": "HTTP status code returned along with this error response",
+          "defaultValue": "429",
+          "minimum": "",
+          "maximum": "",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        "code": {
+          "description": "Code given to this error",
+          "enum": [
+            "QUOTA_EXCEEDED",
+            "TOO_MANY_REQUESTS"
+          ],
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "message": {
+          "description": "Detailed error description",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "GenericDevice4041": {
+      "id": "GenericDevice4041",
+      "required": [
+        "status",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "status": {
+          "description": "HTTP status code returned along with this error response",
+          "defaultValue": "404",
+          "minimum": "",
+          "maximum": "",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        "code": {
+          "description": "Code given to this error",
+          "enum": [
+            "NOT_FOUND",
+            "IDENTIFIER_NOT_FOUND"
+          ],
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "message": {
+          "description": "Detailed error description",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "GenericExtendSessionDuration4001": {
+      "id": "GenericExtendSessionDuration4001",
+      "required": [
+        "status",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "status": {
+          "description": "HTTP status code returned along with this error response",
+          "defaultValue": "400",
+          "minimum": "",
+          "maximum": "",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        "code": {
+          "description": "Code given to this error",
+          "enum": [
+            "INVALID_ARGUMENT",
+            "OUT_OF_RANGE",
+            "QUALITY_ON_DEMAND.DURATION_OUT_OF_RANGE"
+          ],
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "message": {
+          "description": "Detailed error description",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "Range": {
+      "id": "Range",
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "description": "TCP or UDP port number",
+          "minimum": "0",
+          "maximum": "65535",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        "to": {
+          "description": "TCP or UDP port number",
+          "minimum": "0",
+          "maximum": "65535",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "SessionInConflict4091": {
+      "id": "SessionInConflict4091",
+      "required": [
+        "status",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "status": {
+          "description": "HTTP status code returned along with this error response",
+          "defaultValue": "409",
+          "minimum": "",
+          "maximum": "",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        "code": {
+          "description": "Code given to this error",
+          "defaultValue": "CONFLICT",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "message": {
+          "description": "Detailed error description",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    },
+    "SessionStatusConflict4091": {
+      "id": "SessionStatusConflict4091",
+      "required": [
+        "status",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "status": {
+          "description": "HTTP status code returned along with this error response",
+          "defaultValue": "409",
+          "minimum": "",
+          "maximum": "",
+          "uniqueItems": false,
+          "type": "integer",
+          "format": "int32"
+        },
+        "code": {
+          "description": "Code given to this error",
+          "defaultValue": "QUALITY_ON_DEMAND.SESSION_EXTENSION_NOT_ALLOWED",
+          "uniqueItems": false,
+          "type": "string"
+        },
+        "message": {
+          "description": "Detailed error description",
+          "uniqueItems": false,
+          "type": "string"
+        }
+      }
+    }
+  },
+  "authorizations": {},
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ]
+}

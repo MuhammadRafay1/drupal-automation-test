@@ -1,0 +1,45 @@
+name: Upload API Portal Static Files to Drupal
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-static:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Optional: Check that static folder exists
+      - name: Verify static folder exists
+        run: |
+          if [ ! -d "api-portal/static" ]; then
+            echo "api-portal/static does not exist!"
+            exit 1
+          fi
+
+      # Optional: Clean remote static folder first
+      - name: Clean existing static folder on Pantheon
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.PANTHEON_SFTP_HOST }}
+          username: ${{ secrets.PANTHEON_SFTP_USERNAME }}
+          port: ${{ secrets.PANTHEON_SFTP_PORT }}
+          key: ${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}
+          script: |
+            rm -rf /code/web/sites/default/files/static
+
+      # Upload the local static folder into the files/static path
+      - name: Upload static folder to Pantheon
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.PANTHEON_SFTP_HOST }}
+          username: ${{ secrets.PANTHEON_SFTP_USERNAME }}
+          port: ${{ secrets.PANTHEON_SFTP_PORT }}
+          key: ${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}
+          source: "api-portal/static"
+          target: "/code/web/sites/default/files/"

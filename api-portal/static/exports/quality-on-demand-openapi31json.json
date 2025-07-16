@@ -1,0 +1,3204 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Quality-On-Demand",
+    "description": "The Quality-On-Demand (QoD) API provides a programmable interface for developers and other users (API consumers) to request stable latency or throughput managed by networks without the necessity to have an in-depth knowledge of the underlying network complexity (e.g. the 4G/5G system in case of a mobile network).\n\n# Introduction\n\nIndustrial (IoT), VR/Gaming, live video streaming, autonomous driving and many other scenarios demand network communication quality and are sensitive to any change in transmission conditions. Being able to request a stable latency (reduced jitter) or prioritized throughput from the network can improve user experience substantially.\n\nThe QoD API offers the application developers the capability to request for stable latency (reduced jitter) or throughput for some specified application data flows between application clients (within a user device) and application servers (backend services). The developer has a pre-defined set of Quality of Service (QoS) profiles which they could choose from depending on their latency or throughput requirements.\n\n![QoD API Overview](https://raw.githubusercontent.com/camaraproject/QualityOnDemand/main/documentation/API_documentation/resources/QoD_latency_overview.PNG)\n\nThe usage of the API is based on QoS session resources, which can be created (based on available QoS profiles), queried and deleted. The deletion of a requested session can be triggered by the API consumer or can be triggered automatically once the QoS session has reached its limit.\n\n# Relevant terms and definitions\n\n* **QOD service endpoint**:\nThe URL pointing to the RESTful resource of the QoD API.\n\n* **Authentication**:\nSecurity access keys such as OAuth 2.0 client credentials used by client applications to invoke the QoD API.\n\n* **QoS profiles**:\nLatency, throughput or priority requirements of the application mapped to relevant QoS profile values. The set of QoS Profiles that an API provider is offering may be retrieved via the `qos-profiles` API (cf. https://github.com/camaraproject/QualityOnDemand/) or will be agreed during the onboarding with the API provider.\n\n* **Identifier for the device**:\nAt least one identifier for the device (user equipment) out of four options: IPv4 address, IPv6 address, Phone number, or Network Access Identifier assigned by the mobile network operator for the device. Note: Network Access Identifier is defined for future use and will not be supported with this version of the API.\n\n* **Identifier for the application server**:\nIPv4 and/or IPv6 address of the application server (application backend)\n\n* **App-Flow (between the application client and application server)**:\nThe precise application data flow the developer wants to prioritize and have stable latency or throughput for. This flow is in the current API version determined by the identified device and the application server. And it can be further elaborated with details such as ports or port-ranges. Future version of the API might allow more detailed flow identification features.\n\n* **Duration**:\nDuration (in seconds) for which the QoS session (between application client and application server) should be created. Limits for session duration can be set by the implementation for the QoS profile. The user may request a termination before its expiration.\n\n * **Notification URL and token**:\nThe API consumer may provide a callback URL (`sink`) on which notifications about all status change events (eg. provisioning termination) can be received from the API provider. This is an optional parameter. The notification will be sent as a CloudEvent compliant message.\nIf `sink` is included, it is RECOMMENDED for the client to provide as well the `sinkCredential` property to protect the notification endpoint. In the current version, `sinkCredential.credentialType` MUST be set to `ACCESSTOKEN` if provided.\n\n# API functionality\n\nThe usage of the QoD API is based on QoS profile classes and parameters which define App-Flows.\nBased on the API, QoS session resources can be created, queried, and deleted. Once an offered QoS profile class is requested, application users get a prioritized service with stable latency or throughput even in the case of congestion. The QoD API has the following characteristics:\n\n* A specified App-Flow is prioritized to ensure stable latency or throughput for that flow.\n* The prioritized App-Flow is described by providing information such as device IP address (or other device identifier) & application server IP addresses and port/port-ranges.\n* The developer specifies the duration for which they need the prioritized App-flow.\n* Stable latency or throughput is requested by selecting from the list of QoS profiles made available by the service provider (e.g. QOS_E) to map latency and throughput requirements.\n* The API consumer can optionally also specify callback URL (`sink` param) on which notifications for the session can be sent. <br>\n\nFollowing diagram shows the interaction between different components\n\n![QoD Management API](https://raw.githubusercontent.com/camaraproject/QualityOnDemand/main/documentation/API_documentation/resources/QoD_details.PNG)\n\n# Authorization and authentication\n\nThe \"Camara Security and Interoperability Profile\" provides details of how an API consumer requests an access token. Please refer to Identity and Consent Management (https://github.com/camaraproject/IdentityAndConsentManagement/) for the released version of the profile.\n\nThe specific authorization flows to be used will be agreed upon during the onboarding process, happening between the API consumer and the API provider, taking into account the declared purpose for accessing the API, whilst also being subject to the prevailing legal framework dictated by local legislation.\n\nIn cases where personal data is processed by the API and users can exercise their rights through mechanisms such as opt-in and/or opt-out, the use of three-legged access tokens is mandatory. This ensures that the API remains in compliance with privacy regulations, upholding the principles of transparency and user-centric privacy-by-design.\n\n# Identifying the device from the access token\n\nThis API requires the API consumer to identify a device as the subject of the API as follows:\n- When the API is invoked using a two-legged access token, the subject will be identified from the optional `device` object, which therefore MUST be provided.\n\n- When a three-legged access token is used however, this optional identifier MUST NOT be provided, as the subject will be uniquely identified from the access token.\n\nThis approach simplifies API usage for API consumers using a three-legged access token to invoke the API by relying on the information that is associated with the access token and was identified during the authentication process.\n\n## Error handling:\n- If the subject cannot be identified from the access token and the optional `device` object is not included in the request, then the server will return an error with the `422 MISSING_IDENTIFIER` error code.\n\n- If the subject can be identified from the access token and the optional `device` object is also included in the request, then the server will return an error with the `422 UNNECESSARY_IDENTIFIER` error code. This will be the case even if the same device is identified by these two methods, as the server is unable to make this comparison.\n\n- If the requested `qosProfile` exists but is currently not available for creating a session (e.g., its status is INACTIVE or DEPRECATED), then the server will return an error with the `422 QUALITY_ON_DEMAND.QOS_PROFILE_NOT_APPLICABLE` error code.\n\n# Multi-SIM scenario handling\n\nIn multi-SIM scenarios where more than one mobile device is associated with a phone number (e.g. a smartphone with an associated smartwatch), it might not be possible to uniquely identify the device to which the enhanced QoS profile should apply from that phone number. If the phone number is used as the device identifier when creating a QoS session in a multi-SIM scenario, the API may respond with an error, apply the enhanced QoS profile to all devices in the multi-SIM group, or apply the enhanced QoS profile to a single device in the multi-SIM group which may not be the intended device.\n\nPossible solutions in such a scenario include:\n- Using the authorisation code flow to obtain an access token, which will automatically identify the intended device\n- Identifying the intended device from a unique identifier for that device, such as its source IP address and port\n- Check with the SIM provider whether a unique \"secondary\" phone number is already associated with each device, and use the secondary phone number to identify the intended device if available\n\n# Further info and support\n\n(FAQs will be added in a later version of the documentation)\n",
+    "contact": {},
+    "version": "wip"
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "servers": [
+    {
+      "url": "{apiRoot}/quality-on-demand/vwip",
+      "variables": {
+        "apiRoot": {
+          "default": "http://localhost:9091",
+          "description": "API root, defined by the service provider, e.g. `api.example.com` or `api.example.com/somepath`"
+        }
+      }
+    },
+    {
+      "url": "https://example.com/.well-known",
+      "variables": {}
+    }
+  ],
+  "paths": {
+    "/sessions": {
+      "post": {
+        "tags": [
+          "QoS Sessions"
+        ],
+        "summary": "createSession",
+        "description": "Create QoS Session to manage latency/throughput priorities\n\nIf the qosStatus in the API response is \"AVAILABLE\" and a notification callback is provided the API consumer will receive in addition to the response a\n`QOS_STATUS_CHANGED` event notification with `qosStatus` as `AVAILABLE`.\n\nIf the `qosStatus` in the API response is `REQUESTED`, the client will receive either\n- a `QOS_STATUS_CHANGED` event notification with `qosStatus` as `AVAILABLE` after the network notifies that it has created the requested session, or\n- a `QOS_STATUS_CHANGED` event notification with `qosStatus` as `UNAVAILABLE` and `statusInfo` as `NETWORK_TERMINATED` after the network notifies that it has failed to provide the requested session.\n\nA `QOS_STATUS_CHANGED` event notification with `qosStatus` as `UNAVAILABLE` will also be send if the network terminates the session before the requested duration expired\n\n**NOTES:**\n- In case of a `QOS_STATUS_CHANGED` event with `qosStatus` as `UNAVAILABLE` and `statusInfo` as `NETWORK_TERMINATED` the resources of the QoS session are not directly released, but will get deleted automatically at earliest 360 seconds after the event.\n\n  This behavior allows API consumers which are not receiving notification events but are polling to get the session information with the `qosStatus` `UNAVAILABLE` and `statusInfo` `NETWORK_TERMINATED`. Before a API consumer can attempt to create a new QoD session for the same device and flow period they must release the session resources with an explicit `delete` operation if not yet automatically deleted.\n- The access token may be either 2-legged or 3-legged. See \"Identifying the device from the access token\" for further information\n  - When the API is invoked using a two-legged access token, the subject will be identified from the optional `device` object, which therefore MUST be provided.\n  - When a three-legged access token is used however, this optional identifier MUST NOT be provided, as the subject will be uniquely identified from the access token.\n",
+        "operationId": "createSession",
+        "parameters": [
+          {
+            "name": "x-correlator",
+            "in": "header",
+            "description": "Correlation id for the different services",
+            "style": "simple",
+            "schema": {
+              "pattern": "^[a-zA-Z0-9-]{0,55}$",
+              "type": "string",
+              "examples": [
+                "b4333c46-49c0-4f62-80d7-f0ef930f1c46"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Parameters to create a new session",
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateSession"
+                  },
+                  {
+                    "description": "Parameters to create a new session"
+                  }
+                ],
+                "contentMediaType": "application/json"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Session created",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionInfo"
+                    },
+                    {
+                      "description": "Session related information returned in responses.\nNote that the device object is defined as optional and will only to be returned if provided in createSession. If more than one type of device identifier was provided, only one identifier will be returned (at implementation choice and with the original value provided in createSession).\nPlease note that IP addresses of devices can change and get reused, so the original values may no longer identify the same device. They identified the device at the time of session creation.\n"
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request when creating a session",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/CreateSessionBadRequest4001"
+                    },
+                    {
+                      "examples": [
+                        "{\"status\":400,\"code\":\"INVALID_ARGUMENT\",\"message\":\"Client specified an invalid argument, request body or query param.\"}",
+                        "{\"status\":400,\"code\":\"OUT_OF_RANGE\",\"message\":\"Client specified an invalid range.\"}",
+                        "{\"status\":400,\"code\":\"QUALITY_ON_DEMAND.DURATION_OUT_OF_RANGE\",\"message\":\"The requested duration is out of the allowed range for the specific QoS profile\"}",
+                        "{\"status\":400,\"code\":\"INVALID_CREDENTIAL\",\"message\":\"Only Access token is supported\"}",
+                        "{\"status\":400,\"code\":\"INVALID_TOKEN\",\"message\":\"Only bearer token is supported\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_400_INVALID_ARGUMENT": {
+                    "description": "Invalid Argument. Generic Syntax Exception",
+                    "value": {
+                      "status": 400,
+                      "code": "INVALID_ARGUMENT",
+                      "message": "Client specified an invalid argument, request body or query param."
+                    }
+                  },
+                  "GENERIC_400_OUT_OF_RANGE": {
+                    "description": "Out of Range. Specific Syntax Exception used when a given field has a pre-defined range or a invalid filter criteria combination is requested",
+                    "value": {
+                      "status": 400,
+                      "code": "OUT_OF_RANGE",
+                      "message": "Client specified an invalid range."
+                    }
+                  },
+                  "DurationOutOfRangeForQoSProfile": {
+                    "description": "The requested duration is out of the allowed range for the specific QoS profile",
+                    "value": {
+                      "status": 400,
+                      "code": "QUALITY_ON_DEMAND.DURATION_OUT_OF_RANGE",
+                      "message": "The requested duration is out of the allowed range for the specific QoS profile"
+                    }
+                  },
+                  "GENERIC_400_INVALID_CREDENTIAL": {
+                    "value": {
+                      "status": 400,
+                      "code": "INVALID_CREDENTIAL",
+                      "message": "Only Access token is supported"
+                    }
+                  },
+                  "GENERIC_400_INVALID_TOKEN": {
+                    "value": {
+                      "status": 400,
+                      "code": "INVALID_TOKEN",
+                      "message": "Only bearer token is supported"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Generic4011"
+                    },
+                    {
+                      "examples": [
+                        {
+                          "status": 401,
+                          "code": "UNAUTHENTICATED",
+                          "message": "Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required."
+                        }
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_401_UNAUTHENTICATED": {
+                    "description": "Request cannot be authenticated and a new authentication is required",
+                    "value": {
+                      "status": 401,
+                      "code": "UNAUTHENTICATED",
+                      "message": "Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Generic4011"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/GenericDevice4041"
+                    },
+                    {
+                      "examples": [
+                        "{\"status\":404,\"code\":\"NOT_FOUND\",\"message\":\"The specified resource is not found.\"}",
+                        "{\"status\":404,\"code\":\"IDENTIFIER_NOT_FOUND\",\"message\":\"Device identifier not found.\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_404_NOT_FOUND": {
+                    "description": "Resource is not found",
+                    "value": {
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "message": "The specified resource is not found."
+                    }
+                  },
+                  "GENERIC_404_DEVICE_NOT_FOUND": {
+                    "description": "Device identifier not found",
+                    "value": {
+                      "status": 404,
+                      "code": "IDENTIFIER_NOT_FOUND",
+                      "message": "Device identifier not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionInConflict4091"
+                    },
+                    {
+                      "examples": [
+                        {
+                          "status": 409,
+                          "code": "CONFLICT",
+                          "message": "Conflict with an existing session for the same device."
+                        }
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "example": {
+                  "status": 409,
+                  "code": "CONFLICT",
+                  "message": "Conflict with an existing session for the same device."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/CreateSessionUnprocessableEntity4221"
+                    },
+                    {
+                      "examples": [
+                        "{\"status\":422,\"code\":\"IDENTIFIER_MISMATCH\",\"message\":\"Provided identifiers are not consistent.\"}",
+                        "{\"status\":422,\"code\":\"SERVICE_NOT_APPLICABLE\",\"message\":\"The service is not available for the provided identifier.\"}",
+                        "{\"status\":422,\"code\":\"MISSING_IDENTIFIER\",\"message\":\"The device cannot be identified.\"}",
+                        "{\"status\":422,\"code\":\"UNSUPPORTED_IDENTIFIER\",\"message\":\"The identifier provided is not supported.\"}",
+                        "{\"status\":422,\"code\":\"UNNECESSARY_IDENTIFIER\",\"message\":\"The device is already identified by the access token.\"}",
+                        "{\"status\":422,\"code\":\"QUALITY_ON_DEMAND.QOS_PROFILE_NOT_APPLICABLE\",\"message\":\"The requested QoS Profile is currently not available for session creation.\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_422_IDENTIFIER_MISMATCH": {
+                    "description": "Inconsistency between identifiers not pointing to the same device",
+                    "value": {
+                      "status": 422,
+                      "code": "IDENTIFIER_MISMATCH",
+                      "message": "Provided identifiers are not consistent."
+                    }
+                  },
+                  "GENERIC_422_SERVICE_NOT_APPLICABLE": {
+                    "description": "Service not applicable for the provided identifier",
+                    "value": {
+                      "status": 422,
+                      "code": "SERVICE_NOT_APPLICABLE",
+                      "message": "The service is not available for the provided identifier."
+                    }
+                  },
+                  "GENERIC_422_MISSING_IDENTIFIER": {
+                    "description": "An identifier is not included in the request and the device or phone number identification cannot be derived from the access token",
+                    "value": {
+                      "status": 422,
+                      "code": "MISSING_IDENTIFIER",
+                      "message": "The device cannot be identified."
+                    }
+                  },
+                  "GENERIC_422_UNSUPPORTED_IDENTIFIER": {
+                    "description": "None of the provided identifiers is supported by the implementation",
+                    "value": {
+                      "status": 422,
+                      "code": "UNSUPPORTED_IDENTIFIER",
+                      "message": "The identifier provided is not supported."
+                    }
+                  },
+                  "GENERIC_422_UNNECESSARY_IDENTIFIER": {
+                    "description": "An explicit identifier is provided when a device or phone number has already been identified from the access token",
+                    "value": {
+                      "status": 422,
+                      "code": "UNNECESSARY_IDENTIFIER",
+                      "message": "The device is already identified by the access token."
+                    }
+                  },
+                  "QUALITY_ON_DEMAND_422_QOS_PROFILE_NOT_APPLICABLE": {
+                    "description": "The requested QoS Profile exists but cannot be used to create a session.",
+                    "value": {
+                      "status": 422,
+                      "code": "QUALITY_ON_DEMAND.QOS_PROFILE_NOT_APPLICABLE",
+                      "message": "The requested QoS Profile is currently not available for session creation."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Generic4291"
+                    },
+                    {
+                      "examples": [
+                        "{\"status\":429,\"code\":\"QUOTA_EXCEEDED\",\"message\":\"Out of resource quota.\"}",
+                        "{\"status\":429,\"code\":\"TOO_MANY_REQUESTS\",\"message\":\"Rate limit reached.\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_429_QUOTA_EXCEEDED": {
+                    "description": "Request is rejected due to exceeding a business quota limit",
+                    "value": {
+                      "status": 429,
+                      "code": "QUOTA_EXCEEDED",
+                      "message": "Out of resource quota."
+                    }
+                  },
+                  "GENERIC_429_TOO_MANY_REQUESTS": {
+                    "description": "Access to the API has been temporarily blocked due to rate or spike arrest limits being reached",
+                    "value": {
+                      "status": 429,
+                      "code": "TOO_MANY_REQUESTS",
+                      "message": "Rate limit reached."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "deprecated": false,
+        "security": [
+          {
+            "openId": [
+              "quality-on-demand:sessions:create"
+            ]
+          }
+        ]
+      },
+      "parameters": []
+    },
+    "/sessions/{sessionId}": {
+      "get": {
+        "tags": [
+          "QoS Sessions"
+        ],
+        "summary": "getSession",
+        "description": "Querying for QoS session resource information details\n\n**NOTES:**\n- The access token may be either 2-legged or 3-legged.\n- If a 3-legged access token is used, the end user (and device) associated with the session must also be associated with the access token.\n- The session must have been created by the same API client given in the access token\n",
+        "operationId": "getSession",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "description": "Session ID that was obtained from the createSession operation",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "contentEncoding": "uuid"
+            }
+          },
+          {
+            "name": "x-correlator",
+            "in": "header",
+            "description": "Correlation id for the different services",
+            "style": "simple",
+            "schema": {
+              "pattern": "^[a-zA-Z0-9-]{0,55}$",
+              "type": "string",
+              "examples": [
+                "b4333c46-49c0-4f62-80d7-f0ef930f1c46"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Contains information about active session",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionInfo"
+                    },
+                    {
+                      "description": "Session related information returned in responses.\nNote that the device object is defined as optional and will only to be returned if provided in createSession. If more than one type of device identifier was provided, only one identifier will be returned (at implementation choice and with the original value provided in createSession).\nPlease note that IP addresses of devices can change and get reused, so the original values may no longer identify the same device. They identified the device at the time of session creation.\n",
+                      "examples": [
+                        "{\"duration\":3600,\"device\":{\"ipv4Address\":{\"publicAddress\":\"203.0.113.0\",\"publicPort\":59765}},\"applicationServer\":{\"ipv4Address\":\"198.51.100.0/24\"},\"qosProfile\":\"QOS_L\",\"sink\":\"https://application-server.com/notifications\",\"sessionId\":\"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\"startedAt\":\"2024-06-01T12:00:00Z\",\"expiresAt\":\"2024-06-01T13:00:00Z\",\"qosStatus\":\"AVAILABLE\"}",
+                        "{\"duration\":2428,\"device\":{\"ipv4Address\":{\"publicAddress\":\"203.0.113.0\",\"publicPort\":59765}},\"applicationServer\":{\"ipv4Address\":\"198.51.100.0/24\"},\"qosProfile\":\"QOS_L\",\"sink\":\"https://application-server.com/notifications\",\"sessionId\":\"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\"startedAt\":\"2024-06-01T12:00:00Z\",\"expiresAt\":\"2024-06-01T12:40:28Z\",\"qosStatus\":\"UNAVAILABLE\",\"statusInfo\":\"NETWORK_TERMINATED\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "SESSION_AVAILABLE": {
+                    "summary": "QoS session status is available",
+                    "description": "QoS session info when status is available",
+                    "value": {
+                      "duration": 3600,
+                      "device": {
+                        "ipv4Address": {
+                          "publicAddress": "203.0.113.0",
+                          "publicPort": 59765
+                        }
+                      },
+                      "applicationServer": {
+                        "ipv4Address": "198.51.100.0/24"
+                      },
+                      "qosProfile": "QOS_L",
+                      "sink": "https://application-server.com/notifications",
+                      "sessionId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                      "startedAt": "2024-06-01T12:00:00Z",
+                      "expiresAt": "2024-06-01T13:00:00Z",
+                      "qosStatus": "AVAILABLE"
+                    }
+                  },
+                  "SESSION_UNAVAILABLE": {
+                    "summary": "QoS session is unavailable",
+                    "description": "QoS session info when status is unavailable due to network termination",
+                    "value": {
+                      "duration": 2428,
+                      "device": {
+                        "ipv4Address": {
+                          "publicAddress": "203.0.113.0",
+                          "publicPort": 59765
+                        }
+                      },
+                      "applicationServer": {
+                        "ipv4Address": "198.51.100.0/24"
+                      },
+                      "qosProfile": "QOS_L",
+                      "sink": "https://application-server.com/notifications",
+                      "sessionId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                      "startedAt": "2024-06-01T12:00:00Z",
+                      "expiresAt": "2024-06-01T12:40:28Z",
+                      "qosStatus": "UNAVAILABLE",
+                      "statusInfo": "NETWORK_TERMINATED"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Generic4001"
+                    },
+                    {
+                      "examples": [
+                        "{\"status\":400,\"code\":\"INVALID_ARGUMENT\",\"message\":\"Client specified an invalid argument, request body or query param.\"}",
+                        "{\"status\":400,\"code\":\"OUT_OF_RANGE\",\"message\":\"Client specified an invalid range.\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_400_INVALID_ARGUMENT": {
+                    "description": "Invalid Argument. Generic Syntax Exception",
+                    "value": {
+                      "status": 400,
+                      "code": "INVALID_ARGUMENT",
+                      "message": "Client specified an invalid argument, request body or query param."
+                    }
+                  },
+                  "GENERIC_400_OUT_OF_RANGE": {
+                    "description": "Out of Range. Specific Syntax Exception used when a given field has a pre-defined range or a invalid filter criteria combination is requested",
+                    "value": {
+                      "status": 400,
+                      "code": "OUT_OF_RANGE",
+                      "message": "Client specified an invalid range."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Generic4011"
+                    },
+                    {
+                      "examples": [
+                        {
+                          "status": 401,
+                          "code": "UNAUTHENTICATED",
+                          "message": "Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required."
+                        }
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_401_UNAUTHENTICATED": {
+                    "description": "Request cannot be authenticated and a new authentication is required",
+                    "value": {
+                      "status": 401,
+                      "code": "UNAUTHENTICATED",
+                      "message": "Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Generic4011"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Generic4011"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Generic4291"
+                    },
+                    {
+                      "examples": [
+                        "{\"status\":429,\"code\":\"QUOTA_EXCEEDED\",\"message\":\"Out of resource quota.\"}",
+                        "{\"status\":429,\"code\":\"TOO_MANY_REQUESTS\",\"message\":\"Rate limit reached.\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_429_QUOTA_EXCEEDED": {
+                    "description": "Request is rejected due to exceeding a business quota limit",
+                    "value": {
+                      "status": 429,
+                      "code": "QUOTA_EXCEEDED",
+                      "message": "Out of resource quota."
+                    }
+                  },
+                  "GENERIC_429_TOO_MANY_REQUESTS": {
+                    "description": "Access to the API has been temporarily blocked due to rate or spike arrest limits being reached",
+                    "value": {
+                      "status": 429,
+                      "code": "TOO_MANY_REQUESTS",
+                      "message": "Rate limit reached."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "deprecated": false,
+        "security": [
+          {
+            "openId": [
+              "quality-on-demand:sessions:read"
+            ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "QoS Sessions"
+        ],
+        "summary": "deleteSession",
+        "description": "Release resources related to QoS session\n\nIf the notification callback is provided and the `qosStatus` of the session was `AVAILABLE` the client will receive in addition to the response a `QOS_STATUS_CHANGED` event with\n- `qosStatus` as `UNAVAILABLE` and\n- `statusInfo` as `DELETE_REQUESTED`\nThere will be no notification event if the `qosStatus` was already `UNAVAILABLE`.\n\n**NOTES:**\n- The access token may be either 2-legged or 3-legged.\n- If a 3-legged access token is used, the subject associated with the session must also be associated with the access token.\n- The session must must have been created by the same API consumer given in the access token\n",
+        "operationId": "deleteSession",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "description": "Session ID that was obtained from the createSession operation",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "contentEncoding": "uuid"
+            }
+          },
+          {
+            "name": "x-correlator",
+            "in": "header",
+            "description": "Correlation id for the different services",
+            "style": "simple",
+            "schema": {
+              "pattern": "^[a-zA-Z0-9-]{0,55}$",
+              "type": "string",
+              "examples": [
+                "b4333c46-49c0-4f62-80d7-f0ef930f1c46"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Session deleted",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {}
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Generic4001"
+                    },
+                    {
+                      "examples": [
+                        "{\"status\":400,\"code\":\"INVALID_ARGUMENT\",\"message\":\"Client specified an invalid argument, request body or query param.\"}",
+                        "{\"status\":400,\"code\":\"OUT_OF_RANGE\",\"message\":\"Client specified an invalid range.\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_400_INVALID_ARGUMENT": {
+                    "description": "Invalid Argument. Generic Syntax Exception",
+                    "value": {
+                      "status": 400,
+                      "code": "INVALID_ARGUMENT",
+                      "message": "Client specified an invalid argument, request body or query param."
+                    }
+                  },
+                  "GENERIC_400_OUT_OF_RANGE": {
+                    "description": "Out of Range. Specific Syntax Exception used when a given field has a pre-defined range or a invalid filter criteria combination is requested",
+                    "value": {
+                      "status": 400,
+                      "code": "OUT_OF_RANGE",
+                      "message": "Client specified an invalid range."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Generic4011"
+                    },
+                    {
+                      "examples": [
+                        {
+                          "status": 401,
+                          "code": "UNAUTHENTICATED",
+                          "message": "Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required."
+                        }
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_401_UNAUTHENTICATED": {
+                    "description": "Request cannot be authenticated and a new authentication is required",
+                    "value": {
+                      "status": 401,
+                      "code": "UNAUTHENTICATED",
+                      "message": "Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Generic4011"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Generic4011"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Generic4291"
+                    },
+                    {
+                      "examples": [
+                        "{\"status\":429,\"code\":\"QUOTA_EXCEEDED\",\"message\":\"Out of resource quota.\"}",
+                        "{\"status\":429,\"code\":\"TOO_MANY_REQUESTS\",\"message\":\"Rate limit reached.\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_429_QUOTA_EXCEEDED": {
+                    "description": "Request is rejected due to exceeding a business quota limit",
+                    "value": {
+                      "status": 429,
+                      "code": "QUOTA_EXCEEDED",
+                      "message": "Out of resource quota."
+                    }
+                  },
+                  "GENERIC_429_TOO_MANY_REQUESTS": {
+                    "description": "Access to the API has been temporarily blocked due to rate or spike arrest limits being reached",
+                    "value": {
+                      "status": 429,
+                      "code": "TOO_MANY_REQUESTS",
+                      "message": "Rate limit reached."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "deprecated": false,
+        "security": [
+          {
+            "openId": [
+              "quality-on-demand:sessions:delete"
+            ]
+          }
+        ]
+      },
+      "parameters": []
+    },
+    "/sessions/{sessionId}/extend": {
+      "post": {
+        "tags": [
+          "QoS Sessions"
+        ],
+        "summary": "extendQosSessionDuration",
+        "description": "Extend the overall session duration of an active QoS session (with qosStatus = AVAILABLE).\nThe overall duration of the QoS session, including the additional extended duration, shall not exceed the maximum duration limit fixed for the QoS Profile. If the current duration plus the value of `requestedAdditionalDuration` exceeds the maximum limit, the new overall duration shall be capped to the maximum value allowed.\nAn example: For a QoS profile limited to a `maxDuration` of 50,000 seconds, a QoD session was originally created with duration 30,000 seconds. Before the session expires, the developer requests to extend the session by another 30,000 seconds:\n- Previous duration: 30,000 seconds\n- Requested additional duration: 30,000 seconds\n- New overall session duration: 50,000 seconds (the maximum allowed)\n\n**NOTES:**\n- The access token may be either 2-legged or 3-legged.\n- If a 3-legged access token is used, the subject associated with the session must also be associated with the access token.\n- The session must must have been created by the same API consumer given in the access token\n",
+        "operationId": "extendQosSessionDuration",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "description": "Session ID that was obtained from the createSession operation",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "type": "string",
+              "contentEncoding": "uuid"
+            }
+          },
+          {
+            "name": "x-correlator",
+            "in": "header",
+            "description": "Correlation id for the different services",
+            "style": "simple",
+            "schema": {
+              "pattern": "^[a-zA-Z0-9-]{0,55}$",
+              "type": "string",
+              "examples": [
+                "b4333c46-49c0-4f62-80d7-f0ef930f1c46"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Parameters to extend the duration of an active session",
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ExtendSessionDuration"
+                  },
+                  {
+                    "description": "Parameters to extend the duration of an active session"
+                  }
+                ],
+                "contentMediaType": "application/json"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Contains information about active session",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionInfo"
+                    },
+                    {
+                      "description": "Session related information returned in responses.\nNote that the device object is defined as optional and will only to be returned if provided in createSession. If more than one type of device identifier was provided, only one identifier will be returned (at implementation choice and with the original value provided in createSession).\nPlease note that IP addresses of devices can change and get reused, so the original values may no longer identify the same device. They identified the device at the time of session creation.\n"
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/GenericExtendSessionDuration4001"
+                    },
+                    {
+                      "examples": [
+                        "{\"status\":400,\"code\":\"INVALID_ARGUMENT\",\"message\":\"Client specified an invalid argument, request body or query param.\"}",
+                        "{\"status\":400,\"code\":\"OUT_OF_RANGE\",\"message\":\"Client specified an invalid range.\"}",
+                        "{\"status\":400,\"code\":\"QUALITY_ON_DEMAND.DURATION_OUT_OF_RANGE\",\"message\":\"The requested duration is out of the allowed range for the specific QoS profile\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_400_INVALID_ARGUMENT": {
+                    "description": "Invalid Argument. Generic Syntax Exception",
+                    "value": {
+                      "status": 400,
+                      "code": "INVALID_ARGUMENT",
+                      "message": "Client specified an invalid argument, request body or query param."
+                    }
+                  },
+                  "GENERIC_400_OUT_OF_RANGE": {
+                    "description": "Out of Range. Specific Syntax Exception used when a given field has a pre-defined range or a invalid filter criteria combination is requested",
+                    "value": {
+                      "status": 400,
+                      "code": "OUT_OF_RANGE",
+                      "message": "Client specified an invalid range."
+                    }
+                  },
+                  "DurationOutOfRangeForQoSProfile": {
+                    "description": "NOTE - this error response cannot be returned by the `/extend` operation and will be removed from the API definition in the next version.",
+                    "value": {
+                      "status": 400,
+                      "code": "QUALITY_ON_DEMAND.DURATION_OUT_OF_RANGE",
+                      "message": "The requested duration is out of the allowed range for the specific QoS profile"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Generic4011"
+                    },
+                    {
+                      "examples": [
+                        {
+                          "status": 401,
+                          "code": "UNAUTHENTICATED",
+                          "message": "Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required."
+                        }
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_401_UNAUTHENTICATED": {
+                    "description": "Request cannot be authenticated and a new authentication is required",
+                    "value": {
+                      "status": 401,
+                      "code": "UNAUTHENTICATED",
+                      "message": "Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Generic4011"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Generic4011"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionStatusConflict4091"
+                    },
+                    {
+                      "examples": [
+                        {
+                          "status": 409,
+                          "code": "QUALITY_ON_DEMAND.SESSION_EXTENSION_NOT_ALLOWED",
+                          "message": "Extending the session duration is not allowed in the current state ({qosStatus}). The session must be in the AVAILABLE state."
+                        }
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "SessionExtensionNotAllowed": {
+                    "description": "Session extension is in conflict with current session status",
+                    "value": {
+                      "status": 409,
+                      "code": "QUALITY_ON_DEMAND.SESSION_EXTENSION_NOT_ALLOWED",
+                      "message": "Extending the session duration is not allowed in the current state ({qosStatus}). The session must be in the AVAILABLE state."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Generic4291"
+                    },
+                    {
+                      "examples": [
+                        "{\"status\":429,\"code\":\"QUOTA_EXCEEDED\",\"message\":\"Out of resource quota.\"}",
+                        "{\"status\":429,\"code\":\"TOO_MANY_REQUESTS\",\"message\":\"Rate limit reached.\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_429_QUOTA_EXCEEDED": {
+                    "description": "Request is rejected due to exceeding a business quota limit",
+                    "value": {
+                      "status": 429,
+                      "code": "QUOTA_EXCEEDED",
+                      "message": "Out of resource quota."
+                    }
+                  },
+                  "GENERIC_429_TOO_MANY_REQUESTS": {
+                    "description": "Access to the API has been temporarily blocked due to rate or spike arrest limits being reached",
+                    "value": {
+                      "status": 429,
+                      "code": "TOO_MANY_REQUESTS",
+                      "message": "Rate limit reached."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "deprecated": false,
+        "security": [
+          {
+            "openId": [
+              "quality-on-demand:sessions:update"
+            ]
+          }
+        ]
+      },
+      "parameters": []
+    },
+    "/retrieve-sessions": {
+      "post": {
+        "tags": [
+          "QoS Sessions"
+        ],
+        "summary": "retrieveSessionsByDevice",
+        "description": "Querying for QoS session resource information details for a device\n\n**NOTES:**\n- The access token may be either 2-legged or 3-legged.\n  - If a 3-legged access token is used, the subject associated with the session must also be associated with the access token. In this case the optional `device` parameter MUST NOT be provided in the request.\n  - If a 2-legged access token is used, the device parameter must be provided and identify a device.\n- The session must have been created by the same API consumer given in the access token\n- If no QoS session is found for the requested device, an empty array is returned.\n- This call uses the POST method instead of GET to comply with the CAMARA Commonalities guidelines for sending sensitive or complex data in API calls. Since the device field may contain personally identifiable information, it should not be sent via GET.\n  [CAMARA API Design Guidelines](https://github.com/camaraproject/Commonalities/blob/r2.3/documentation/API-design-guidelines.md#post-or-get-for-transferring-sensitive-or-complex-data)\n",
+        "operationId": "retrieveSessionsByDevice",
+        "parameters": [
+          {
+            "name": "x-correlator",
+            "in": "header",
+            "description": "Correlation id for the different services",
+            "style": "simple",
+            "schema": {
+              "pattern": "^[a-zA-Z0-9-]{0,55}$",
+              "type": "string",
+              "examples": [
+                "b4333c46-49c0-4f62-80d7-f0ef930f1c46"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Parameters to get QoS session information by device",
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RetrieveSessionsInput"
+                  },
+                  {
+                    "description": "Parameters to get QoS session information by device"
+                  }
+                ],
+                "contentMediaType": "application/json"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Returns the QoS sessions information for a given device. A device may have multiple sessions, thus the response is an array. An empty array is returned if no sessions are found.",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "minItems": 0,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionInfo"
+                  },
+                  "description": "QoS session information for a given device",
+                  "examples": [
+                    "[{\"duration\":3600,\"device\":{\"phoneNumber\":\"+123456789\"},\"applicationServer\":{\"ipv4Address\":\"0.0.0.0/0\"},\"qosProfile\":\"QOS_L\",\"sink\":\"https://application-server.com/notifications\",\"sessionId\":\"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\"startedAt\":\"2024-06-01T12:00:00Z\",\"expiresAt\":\"2024-06-01T13:00:00Z\",\"qosStatus\":\"AVAILABLE\"}]",
+                    "[]"
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "RETRIEVE_SESSIONS_ONE_ITEM": {
+                    "summary": "List of QoS sessions for the device",
+                    "description": "A single QoS session for the device is available",
+                    "value": [
+                      {
+                        "duration": 3600,
+                        "device": {
+                          "phoneNumber": "+123456789"
+                        },
+                        "applicationServer": {
+                          "ipv4Address": "0.0.0.0/0"
+                        },
+                        "qosProfile": "QOS_L",
+                        "sink": "https://application-server.com/notifications",
+                        "sessionId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                        "startedAt": "2024-06-01T12:00:00Z",
+                        "expiresAt": "2024-06-01T13:00:00Z",
+                        "qosStatus": "AVAILABLE"
+                      }
+                    ]
+                  },
+                  "RETRIEVE_SESSIONS_NO_ITEMS": {
+                    "summary": "No sessions found for the device",
+                    "description": "An empty array is returned when no sessions are found for the device",
+                    "value": []
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Generic4001"
+                    },
+                    {
+                      "examples": [
+                        "{\"status\":400,\"code\":\"INVALID_ARGUMENT\",\"message\":\"Client specified an invalid argument, request body or query param.\"}",
+                        "{\"status\":400,\"code\":\"OUT_OF_RANGE\",\"message\":\"Client specified an invalid range.\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_400_INVALID_ARGUMENT": {
+                    "description": "Invalid Argument. Generic Syntax Exception",
+                    "value": {
+                      "status": 400,
+                      "code": "INVALID_ARGUMENT",
+                      "message": "Client specified an invalid argument, request body or query param."
+                    }
+                  },
+                  "GENERIC_400_OUT_OF_RANGE": {
+                    "description": "Out of Range. Specific Syntax Exception used when a given field has a pre-defined range or a invalid filter criteria combination is requested",
+                    "value": {
+                      "status": 400,
+                      "code": "OUT_OF_RANGE",
+                      "message": "Client specified an invalid range."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Generic4011"
+                    },
+                    {
+                      "examples": [
+                        {
+                          "status": 401,
+                          "code": "UNAUTHENTICATED",
+                          "message": "Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required."
+                        }
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_401_UNAUTHENTICATED": {
+                    "description": "Request cannot be authenticated and a new authentication is required",
+                    "value": {
+                      "status": 401,
+                      "code": "UNAUTHENTICATED",
+                      "message": "Request not authenticated due to missing, invalid, or expired credentials. A new authentication is required."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Generic4011"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/GenericDevice4041"
+                    },
+                    {
+                      "examples": [
+                        "{\"status\":404,\"code\":\"NOT_FOUND\",\"message\":\"The specified resource is not found.\"}",
+                        "{\"status\":404,\"code\":\"IDENTIFIER_NOT_FOUND\",\"message\":\"Device identifier not found.\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_404_NOT_FOUND": {
+                    "description": "Resource is not found",
+                    "value": {
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "message": "The specified resource is not found."
+                    }
+                  },
+                  "GENERIC_404_DEVICE_NOT_FOUND": {
+                    "description": "Device identifier not found",
+                    "value": {
+                      "status": 404,
+                      "code": "IDENTIFIER_NOT_FOUND",
+                      "message": "Device identifier not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Generic4221"
+                    },
+                    {
+                      "examples": [
+                        "{\"status\":422,\"code\":\"IDENTIFIER_MISMATCH\",\"message\":\"Provided identifiers are not consistent.\"}",
+                        "{\"status\":422,\"code\":\"SERVICE_NOT_APPLICABLE\",\"message\":\"The service is not available for the provided identifier.\"}",
+                        "{\"status\":422,\"code\":\"MISSING_IDENTIFIER\",\"message\":\"The device cannot be identified.\"}",
+                        "{\"status\":422,\"code\":\"UNSUPPORTED_IDENTIFIER\",\"message\":\"The identifier provided is not supported.\"}",
+                        "{\"status\":422,\"code\":\"UNNECESSARY_IDENTIFIER\",\"message\":\"The device is already identified by the access token.\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_422_IDENTIFIER_MISMATCH": {
+                    "description": "Inconsistency between identifiers not pointing to the same device",
+                    "value": {
+                      "status": 422,
+                      "code": "IDENTIFIER_MISMATCH",
+                      "message": "Provided identifiers are not consistent."
+                    }
+                  },
+                  "GENERIC_422_SERVICE_NOT_APPLICABLE": {
+                    "description": "Service not applicable for the provided identifier",
+                    "value": {
+                      "status": 422,
+                      "code": "SERVICE_NOT_APPLICABLE",
+                      "message": "The service is not available for the provided identifier."
+                    }
+                  },
+                  "GENERIC_422_MISSING_IDENTIFIER": {
+                    "description": "An identifier is not included in the request and the device or phone number identification cannot be derived from the access token",
+                    "value": {
+                      "status": 422,
+                      "code": "MISSING_IDENTIFIER",
+                      "message": "The device cannot be identified."
+                    }
+                  },
+                  "GENERIC_422_UNSUPPORTED_IDENTIFIER": {
+                    "description": "None of the provided identifiers is supported by the implementation",
+                    "value": {
+                      "status": 422,
+                      "code": "UNSUPPORTED_IDENTIFIER",
+                      "message": "The identifier provided is not supported."
+                    }
+                  },
+                  "GENERIC_422_UNNECESSARY_IDENTIFIER": {
+                    "description": "An explicit identifier is provided when a device or phone number has already been identified from the access token",
+                    "value": {
+                      "status": 422,
+                      "code": "UNNECESSARY_IDENTIFIER",
+                      "message": "The device is already identified by the access token."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "headers": {
+              "x-correlator": {
+                "description": "Correlation id for the different services",
+                "content": {
+                  "text/plain": {
+                    "schema": {
+                      "pattern": "^[a-zA-Z0-9-]{0,55}$",
+                      "type": "string",
+                      "description": "Correlation id for the different services",
+                      "contentMediaType": "text/plain"
+                    }
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Generic4291"
+                    },
+                    {
+                      "examples": [
+                        "{\"status\":429,\"code\":\"QUOTA_EXCEEDED\",\"message\":\"Out of resource quota.\"}",
+                        "{\"status\":429,\"code\":\"TOO_MANY_REQUESTS\",\"message\":\"Rate limit reached.\"}"
+                      ]
+                    }
+                  ],
+                  "contentMediaType": "application/json"
+                },
+                "examples": {
+                  "GENERIC_429_QUOTA_EXCEEDED": {
+                    "description": "Request is rejected due to exceeding a business quota limit",
+                    "value": {
+                      "status": 429,
+                      "code": "QUOTA_EXCEEDED",
+                      "message": "Out of resource quota."
+                    }
+                  },
+                  "GENERIC_429_TOO_MANY_REQUESTS": {
+                    "description": "Access to the API has been temporarily blocked due to rate or spike arrest limits being reached",
+                    "value": {
+                      "status": 429,
+                      "code": "TOO_MANY_REQUESTS",
+                      "message": "Rate limit reached."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "deprecated": false,
+        "security": [
+          {
+            "openId": [
+              "quality-on-demand:sessions:retrieve-by-device"
+            ]
+          }
+        ]
+      },
+      "parameters": []
+    }
+  },
+  "components": {
+    "schemas": {
+      "BaseSessionInfo": {
+        "title": "BaseSessionInfo",
+        "required": [
+          "applicationServer",
+          "qosProfile"
+        ],
+        "type": "object",
+        "properties": {
+          "device": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Device"
+              },
+              {
+                "description": "End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`\n* `phoneNumber`\n* `networkAccessIdentifier`\n\nNOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.\nNOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines."
+              }
+            ]
+          },
+          "applicationServer": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationServer"
+              },
+              {
+                "description": "A server hosting backend applications to deliver some business logic to clients.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`"
+              }
+            ]
+          },
+          "devicePorts": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PortsSpec"
+              },
+              {
+                "description": "The ports used locally by the device for flows to which the requested QoS profile should apply. If omitted, then the qosProfile will apply to all flows between the device and the specified application server address and ports"
+              }
+            ]
+          },
+          "applicationServerPorts": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PortsSpec"
+              },
+              {
+                "minProperties": 1,
+                "description": "A list of single ports or port ranges on the application server"
+              }
+            ]
+          },
+          "qosProfile": {
+            "maxLength": 256,
+            "minLength": 3,
+            "pattern": "^[a-zA-Z0-9_.-]+$",
+            "type": "string",
+            "description": "A unique name for identifying a specific QoS profile.\nThis may follow different formats depending on the API provider implementation.\nSome options addresses:\n  - A UUID style string\n  - Support for predefined profiles QOS_S, QOS_M, QOS_L, and QOS_E\n  - A searchable descriptive name\nThe set of QoS Profiles that an API provider is offering may be retrieved by means of the QoS Profile API (qos-profile) or agreed on onboarding time.",
+            "examples": [
+              "voice"
+            ]
+          },
+          "sink": {
+            "type": "string",
+            "description": "The address to which events about all status changes of the session (e.g. session termination) shall be delivered using the selected protocol.",
+            "examples": [
+              "https://endpoint.example.com/sink"
+            ]
+          },
+          "sinkCredential": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SinkCredential"
+              },
+              {
+                "description": "A sink credential provides authentication or authorization information necessary to enable delivery of events to a target."
+              }
+            ]
+          }
+        },
+        "description": "Common attributes of a QoD session"
+      },
+      "SessionInfo": {
+        "title": "SessionInfo",
+        "required": [
+          "applicationServer",
+          "qosProfile",
+          "sessionId",
+          "duration",
+          "qosStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "device": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Device"
+              },
+              {
+                "minProperties": 1,
+                "description": "End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`\n* `phoneNumber`\n* `networkAccessIdentifier`\n\nNOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.\nNOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines."
+              }
+            ]
+          },
+          "applicationServer": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationServer"
+              },
+              {
+                "minProperties": 1,
+                "description": "A server hosting backend applications to deliver some business logic to clients.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`"
+              }
+            ]
+          },
+          "devicePorts": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PortsSpec"
+              },
+              {
+                "minProperties": 1,
+                "description": "The ports used locally by the device for flows to which the requested QoS profile should apply. If omitted, then the qosProfile will apply to all flows between the device and the specified application server address and ports"
+              }
+            ]
+          },
+          "applicationServerPorts": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PortsSpec"
+              },
+              {
+                "minProperties": 1,
+                "description": "A list of single ports or port ranges on the application server"
+              }
+            ]
+          },
+          "qosProfile": {
+            "maxLength": 256,
+            "minLength": 3,
+            "pattern": "^[a-zA-Z0-9_.-]+$",
+            "type": "string",
+            "description": "A unique name for identifying a specific QoS profile.\nThis may follow different formats depending on the API provider implementation.\nSome options addresses:\n  - A UUID style string\n  - Support for predefined profiles QOS_S, QOS_M, QOS_L, and QOS_E\n  - A searchable descriptive name\nThe set of QoS Profiles that an API provider is offering may be retrieved by means of the QoS Profile API (qos-profile) or agreed on onboarding time.",
+            "examples": [
+              "voice"
+            ]
+          },
+          "sink": {
+            "type": "string",
+            "description": "The address to which events about all status changes of the session (e.g. session termination) shall be delivered using the selected protocol.",
+            "examples": [
+              "https://endpoint.example.com/sink"
+            ]
+          },
+          "sinkCredential": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SinkCredential"
+              },
+              {
+                "description": "A sink credential provides authentication or authorization information necessary to enable delivery of events to a target."
+              }
+            ]
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Session ID in UUID format",
+            "contentEncoding": "uuid"
+          },
+          "duration": {
+            "minimum": 1.0,
+            "type": "integer",
+            "description": "Session duration in seconds. Implementations can grant the requested session duration or set a different duration, based on network policies or conditions.\n- When `qosStatus` is \"REQUESTED\", the value is the duration to be scheduled, granted by the implementation.\n- When `qosStatus` is AVAILABLE\", the value is the overall duration since `startedAt. When the session is extended, the value is the new overall duration of the session.\n- When `qosStatus` is \"UNAVAILABLE\", the value is the overall effective duration since `startedAt` until the session was terminated.",
+            "contentEncoding": "int32",
+            "examples": [
+              3600
+            ]
+          },
+          "startedAt": {
+            "type": "string",
+            "description": "Date and time when the QoS status became \"AVAILABLE\". Not to be returned when `qosStatus` is \"REQUESTED\". Format must follow RFC 3339 and must indicate time zone (UTC or local).",
+            "contentEncoding": "date-time",
+            "examples": [
+              "2024-06-01T12:00:00Z"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "description": "Date and time of the QoS session expiration. Format must follow RFC 3339 and must indicate time zone (UTC or local).\n- When `qosStatus` is \"AVAILABLE\", it is the limit time when the session is scheduled to finnish, if not terminated by other means.\n- When `qosStatus` is \"UNAVAILABLE\", it is the time when the session was terminated.\n- Not to be returned when `qosStatus` is \"REQUESTED\".\nWhen the session is extended, the value is the new expiration time of the session.",
+            "contentEncoding": "date-time",
+            "examples": [
+              "2024-06-01T13:00:00Z"
+            ]
+          },
+          "qosStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QosStatus"
+              },
+              {
+                "description": "The current status of the requested QoS session. The status can be one of the following:\n* `REQUESTED` - QoS has been requested by creating a session\n* `AVAILABLE` - The requested QoS has been provided by the network\n* `UNAVAILABLE` - The requested QoS cannot be provided by the network due to some reason"
+              }
+            ]
+          },
+          "statusInfo": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StatusInfo"
+              },
+              {
+                "description": "Reason for the new `qosStatus`. Currently `statusInfo` is only applicable when `qosStatus` is 'UNAVAILABLE'.\n* `DURATION_EXPIRED` - Session terminated due to requested duration expired\n* `NETWORK_TERMINATED` - Network terminated the session before the requested duration expired\n* `DELETE_REQUESTED`- User requested the deletion of the session before the requested duration expired"
+              }
+            ]
+          }
+        },
+        "description": "Session related information returned in responses.\nNote that the device object is defined as optional and will only to be returned if provided in createSession. If more than one type of device identifier was provided, only one identifier will be returned (at implementation choice and with the original value provided in createSession).\nPlease note that IP addresses of devices can change and get reused, so the original values may no longer identify the same device. They identified the device at the time of session creation."
+      },
+      "CreateSession": {
+        "title": "CreateSession",
+        "required": [
+          "applicationServer",
+          "qosProfile",
+          "duration"
+        ],
+        "type": "object",
+        "properties": {
+          "device": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Device"
+              },
+              {
+                "minProperties": 1,
+                "description": "End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`\n* `phoneNumber`\n* `networkAccessIdentifier`\n\nNOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.\nNOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines."
+              }
+            ]
+          },
+          "applicationServer": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationServer"
+              },
+              {
+                "minProperties": 1,
+                "description": "A server hosting backend applications to deliver some business logic to clients.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`"
+              }
+            ]
+          },
+          "devicePorts": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PortsSpec"
+              },
+              {
+                "minProperties": 1,
+                "description": "The ports used locally by the device for flows to which the requested QoS profile should apply. If omitted, then the qosProfile will apply to all flows between the device and the specified application server address and ports"
+              }
+            ]
+          },
+          "applicationServerPorts": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PortsSpec"
+              },
+              {
+                "minProperties": 1,
+                "description": "A list of single ports or port ranges on the application server"
+              }
+            ]
+          },
+          "qosProfile": {
+            "maxLength": 256,
+            "minLength": 3,
+            "pattern": "^[a-zA-Z0-9_.-]+$",
+            "type": "string",
+            "description": "A unique name for identifying a specific QoS profile.\nThis may follow different formats depending on the API provider implementation.\nSome options addresses:\n  - A UUID style string\n  - Support for predefined profiles QOS_S, QOS_M, QOS_L, and QOS_E\n  - A searchable descriptive name\nThe set of QoS Profiles that an API provider is offering may be retrieved by means of the QoS Profile API (qos-profile) or agreed on onboarding time.",
+            "examples": [
+              "voice"
+            ]
+          },
+          "sink": {
+            "type": "string",
+            "description": "The address to which events about all status changes of the session (e.g. session termination) shall be delivered using the selected protocol.",
+            "examples": [
+              "https://endpoint.example.com/sink"
+            ]
+          },
+          "sinkCredential": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SinkCredential"
+              },
+              {
+                "description": "A sink credential provides authentication or authorization information necessary to enable delivery of events to a target."
+              }
+            ]
+          },
+          "duration": {
+            "minimum": 1.0,
+            "type": "integer",
+            "description": "Requested session duration in seconds. Value may be explicitly limited for the QoS profile, as specified in the Qos Profile (see qos-profile API). Implementations can grant the requested session duration or set a different duration, based on network policies or conditions.",
+            "contentEncoding": "int32",
+            "examples": [
+              3600
+            ]
+          }
+        },
+        "description": "Attributes required to create a session"
+      },
+      "PortsSpec": {
+        "title": "PortsSpec",
+        "minProperties": 1,
+        "type": "object",
+        "properties": {
+          "ranges": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Range"
+            },
+            "description": "Range of TCP or UDP ports"
+          },
+          "ports": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "maximum": 65535.0,
+              "minimum": 0.0,
+              "type": "integer",
+              "contentEncoding": "int32"
+            },
+            "description": "Array of TCP or UDP ports"
+          }
+        },
+        "description": "Specification of several TCP or UDP ports",
+        "examples": [
+          {
+            "ranges": [
+              {
+                "from": 5010,
+                "to": 5020
+              }
+            ],
+            "ports": [
+              5060,
+              5070
+            ]
+          }
+        ]
+      },
+      "SinkCredential": {
+        "title": "SinkCredential",
+        "required": [
+          "credentialType"
+        ],
+        "type": "object",
+        "properties": {
+          "credentialType": {
+            "type": "string"
+          }
+        },
+        "discriminator": {
+          "propertyName": "credentialType",
+          "mapping": {
+            "PLAIN": "PlainCredential",
+            "ACCESSTOKEN": "AccessTokenCredential",
+            "REFRESHTOKEN": "RefreshTokenCredential"
+          }
+        }
+      },
+      "PlainCredential": {
+        "title": "PlainCredential",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SinkCredential"
+          },
+          {
+            "required": [
+              "identifier",
+              "secret"
+            ],
+            "type": "object",
+            "properties": {
+              "identifier": {
+                "type": "string",
+                "description": "The identifier might be an account or username."
+              },
+              "secret": {
+                "type": "string",
+                "description": "The secret might be a password or passphrase."
+              }
+            }
+          }
+        ],
+        "description": "A plain credential as a combination of an identifier and a secret. MUST not be used in this API version."
+      },
+      "AccessTokenCredential": {
+        "title": "AccessTokenCredential",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SinkCredential"
+          },
+          {
+            "required": [
+              "accessToken",
+              "accessTokenExpiresUtc",
+              "accessTokenType"
+            ],
+            "type": "object",
+            "properties": {
+              "accessToken": {
+                "type": "string",
+                "description": "REQUIRED. An access token is a previously acquired token granting access to the target resource."
+              },
+              "accessTokenExpiresUtc": {
+                "type": "string",
+                "description": "REQUIRED. An absolute (UTC) timestamp at which the token shall be considered expired. Token expiration should occur\nafter the termination of the requested session, allowing the client to be notified of any changes during the\nsessions's existence. If the token expires while the session is still active, the client will stop receiving notifications.\nIf the access token is a JWT and registered \"exp\" (Expiration Time) claim is present, the two expiry times should match.\nIt must follow [RFC 3339](https://datatracker.ietf.org/doc/html/rfc3339#section-5.6) and must have time zone.\nRecommended format is yyyy-MM-dd'T'HH:mm:ss.SSSZ (i.e. which allows 2023-07-03T14:27:08.312+02:00 or 2023-07-03T12:27:08.312Z)",
+                "contentEncoding": "date-time",
+                "examples": [
+                  "2023-07-03T12:27:08.312Z"
+                ]
+              },
+              "accessTokenType": {
+                "const": "bearer",
+                "type": "string",
+                "description": "REQUIRED. Type of the access token (See [OAuth 2.0](https://tools.ietf.org/html/rfc6749#section-7.1)). For the current version of the API the type MUST be set to `Bearer`."
+              }
+            }
+          }
+        ],
+        "description": "An access token credential."
+      },
+      "RefreshTokenCredential": {
+        "title": "RefreshTokenCredential",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SinkCredential"
+          },
+          {
+            "required": [
+              "accessToken",
+              "accessTokenExpiresUtc",
+              "accessTokenType",
+              "refreshToken",
+              "refreshTokenEndpoint"
+            ],
+            "type": "object",
+            "properties": {
+              "accessToken": {
+                "type": "string",
+                "description": "REQUIRED. An access token is a previously acquired token granting access to the target resource."
+              },
+              "accessTokenExpiresUtc": {
+                "type": "string",
+                "description": "REQUIRED. An absolute UTC instant at which the token shall be considered expired.",
+                "contentEncoding": "date-time"
+              },
+              "accessTokenType": {
+                "const": "bearer",
+                "type": "string",
+                "description": "REQUIRED. Type of the access token (See [OAuth 2.0](https://tools.ietf.org/html/rfc6749#section-7.1))."
+              },
+              "refreshToken": {
+                "type": "string",
+                "description": "REQUIRED. An refresh token credential used to acquire access tokens."
+              },
+              "refreshTokenEndpoint": {
+                "type": "string",
+                "description": "REQUIRED. A URL at which the refresh token can be traded for an access token."
+              }
+            }
+          }
+        ],
+        "description": "An access token credential with a refresh token. MUST not be used in this API version."
+      },
+      "ExtendSessionDuration": {
+        "title": "ExtendSessionDuration",
+        "required": [
+          "requestedAdditionalDuration"
+        ],
+        "type": "object",
+        "properties": {
+          "requestedAdditionalDuration": {
+            "minimum": 1.0,
+            "type": "integer",
+            "description": "Additional duration in seconds to be added to the current session duration. The overall session duration, including extensions, shall not exceed the maximum duration limit for the QoS Profile.",
+            "contentEncoding": "int32",
+            "examples": [
+              1800
+            ]
+          }
+        },
+        "description": "Attributes required to extend the duration of an active session"
+      },
+      "CloudEvent": {
+        "title": "CloudEvent",
+        "required": [
+          "id",
+          "source",
+          "specversion",
+          "time",
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Identifier of this event, that must be unique in the source context."
+          },
+          "source": {
+            "type": "string",
+            "description": "Identifies the context in which an event happened in the specific provider implementation."
+          },
+          "type": {
+            "type": "string"
+          },
+          "specversion": {
+            "const": "1.0",
+            "type": "string",
+            "description": "Version of the specification to which this event conforms (must be 1.0 if it conforms to Cloudevents 1.0.2 version)"
+          },
+          "datacontenttype": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Datacontenttype"
+              },
+              {
+                "description": "media-type that describes the event payload encoding, must be \"application/json\" for CAMARA APIs"
+              }
+            ]
+          },
+          "data": {
+            "type": "object",
+            "description": "Event notification details payload, which depends on the event type"
+          },
+          "time": {
+            "type": "string",
+            "description": "Timestamp of when the occurrence happened. It must follow RFC 3339",
+            "contentEncoding": "date-time"
+          }
+        },
+        "description": "Event compliant with the CloudEvents specification",
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "org.camaraproject.quality-on-demand.v1.qos-status-changed": "EventQosStatusChanged"
+          }
+        }
+      },
+      "EventQosStatusChanged": {
+        "title": "EventQosStatusChanged",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CloudEvent"
+          },
+          {
+            "required": [
+              "data"
+            ],
+            "type": "object",
+            "properties": {
+              "data": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Data"
+                  },
+                  {
+                    "description": "Event details depending on the event type"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Event to notify a QoS status change"
+      },
+      "StatusInfo": {
+        "title": "StatusInfo",
+        "enum": [
+          "DURATION_EXPIRED",
+          "NETWORK_TERMINATED",
+          "DELETE_REQUESTED"
+        ],
+        "type": "string",
+        "description": "Reason for the new `qosStatus`. Currently `statusInfo` is only applicable when `qosStatus` is 'UNAVAILABLE'.\n* `DURATION_EXPIRED` - Session terminated due to requested duration expired\n* `NETWORK_TERMINATED` - Network terminated the session before the requested duration expired\n* `DELETE_REQUESTED`- User requested the deletion of the session before the requested duration expired"
+      },
+      "Device": {
+        "title": "Device",
+        "minProperties": 1,
+        "type": "object",
+        "properties": {
+          "phoneNumber": {
+            "pattern": "^\\+[1-9][0-9]{4,14}$",
+            "type": "string",
+            "description": "A public identifier addressing a telephone subscription. In mobile networks it corresponds to the MSISDN (Mobile Station International Subscriber Directory Number). In order to be globally unique it has to be formatted in international format, according to E.164 standard, prefixed with '+'.",
+            "examples": [
+              "+123456789"
+            ]
+          },
+          "networkAccessIdentifier": {
+            "type": "string",
+            "description": "A public identifier addressing a subscription in a mobile network. In 3GPP terminology, it corresponds to the GPSI formatted with the External Identifier ({Local Identifier}@{Domain Identifier}). Unlike the telephone number, the network access identifier is not subjected to portability ruling in force, and is individually managed by each operator.",
+            "examples": [
+              "123456789@domain.com"
+            ]
+          },
+          "ipv4Address": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeviceIpv4Addr3"
+              },
+              {
+                "description": "The device should be identified by either the public (observed) IP address and port as seen by the application server, or the private (local) and any public (observed) IP addresses in use by the device (this information can be obtained by various means, for example from some DNS servers).\n\nIf the allocated and observed IP addresses are the same (i.e. NAT is not in use) then  the same address should be specified for both publicAddress and privateAddress.\n\nIf NAT64 is in use, the device should be identified by its publicAddress and publicPort, or separately by its allocated IPv6 address (field ipv6Address of the Device object)\n\nIn all cases, publicAddress must be specified, along with at least one of either privateAddress or publicPort, dependent upon which is known. In general, mobile devices cannot be identified by their public IPv4 address alone.",
+                "examples": [
+                  {
+                    "publicAddress": "203.0.113.0",
+                    "publicPort": 59765
+                  }
+                ]
+              }
+            ]
+          },
+          "ipv6Address": {
+            "type": "string",
+            "description": "The device should be identified by the observed IPv6 address, or by any single IPv6 address from within the subnet allocated to the device (e.g. adding ::0 to the /64 prefix).\n\nThe session shall apply to all IP flows between the device subnet and the specified application server, unless further restricted by the optional parameters devicePorts or applicationServerPorts.",
+            "examples": [
+              "2001:db8:85a3:8d3:1319:8a2e:370:7344"
+            ]
+          }
+        },
+        "description": "End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`\n* `phoneNumber`\n* `networkAccessIdentifier`\n\nNOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.\nNOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines."
+      },
+      "ApplicationServer": {
+        "title": "ApplicationServer",
+        "minProperties": 1,
+        "type": "object",
+        "properties": {
+          "ipv4Address": {
+            "type": "string",
+            "description": "IPv4 address may be specified in form <address/mask> as:\n  - address - an IPv4 number in dotted-quad form 1.2.3.4. Only this exact IP number will match the flow control rule.\n  - address/mask - an IP number as above with a mask width of the form 1.2.3.4/24.\n    In this case, all IP numbers from 1.2.3.0 to 1.2.3.255 will match. The bit width MUST be valid for the IP version.",
+            "examples": [
+              "198.51.100.0/24"
+            ]
+          },
+          "ipv6Address": {
+            "type": "string",
+            "description": "IPv6 address may be specified in form <address/mask> as:\n  - address - The /128 subnet is optional for single addresses:\n    - 2001:db8:85a3:8d3:1319:8a2e:370:7344\n    - 2001:db8:85a3:8d3:1319:8a2e:370:7344/128\n  - address/mask - an IP v6 number with a mask:\n    - 2001:db8:85a3:8d3::0/64\n    - 2001:db8:85a3:8d3::/64",
+            "examples": [
+              "2001:db8:85a3:8d3:1319:8a2e:370:7344"
+            ]
+          }
+        },
+        "description": "A server hosting backend applications to deliver some business logic to clients.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`"
+      },
+      "DeviceIpv4Addr": {
+        "title": "DeviceIpv4Addr",
+        "required": [
+          "publicAddress",
+          "privateAddress"
+        ],
+        "type": "object",
+        "properties": {
+          "publicAddress": {
+            "type": "string",
+            "description": "A single IPv4 address with no subnet mask",
+            "examples": [
+              "203.0.113.0"
+            ]
+          },
+          "privateAddress": {
+            "type": "string",
+            "description": "A single IPv4 address with no subnet mask",
+            "examples": [
+              "203.0.113.0"
+            ]
+          },
+          "publicPort": {
+            "maximum": 65535.0,
+            "minimum": 0.0,
+            "type": "integer",
+            "description": "TCP or UDP port number",
+            "contentEncoding": "int32"
+          }
+        }
+      },
+      "QosStatus": {
+        "title": "QosStatus",
+        "enum": [
+          "REQUESTED",
+          "AVAILABLE",
+          "UNAVAILABLE"
+        ],
+        "type": "string",
+        "description": "The current status of the requested QoS session. The status can be one of the following:\n* `REQUESTED` - QoS has been requested by creating a session\n* `AVAILABLE` - The requested QoS has been provided by the network\n* `UNAVAILABLE` - The requested QoS cannot be provided by the network due to some reason"
+      },
+      "EventQosStatus": {
+        "title": "EventQosStatus",
+        "enum": [
+          "AVAILABLE",
+          "UNAVAILABLE"
+        ],
+        "type": "string",
+        "description": "The current status of a requested or previously available session. Applicable values in the event are:\n*  `AVAILABLE` - The requested QoS has been provided by the network.\n*  `UNAVAILABLE` - A requested or previously available QoS session is now unavailable. `statusInfo` may provide additional information about the reason for the unavailability."
+      },
+      "ErrorInfo": {
+        "title": "ErrorInfo",
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "integer",
+            "description": "HTTP status code returned along with this error response",
+            "contentEncoding": "int32"
+          },
+          "code": {
+            "type": "string",
+            "description": "Code given to this error"
+          },
+          "message": {
+            "type": "string",
+            "description": "Detailed error description"
+          }
+        },
+        "description": "Common schema for errors"
+      },
+      "RetrieveSessionsInput": {
+        "title": "RetrieveSessionsInput",
+        "type": "object",
+        "properties": {
+          "device": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Device"
+              },
+              {
+                "minProperties": 1,
+                "description": "End-user equipment able to connect to a network. Examples of devices include smartphones or IoT sensors/actuators.\n\nThe developer can choose to provide the below specified device identifiers:\n\n* `ipv4Address`\n* `ipv6Address`\n* `phoneNumber`\n* `networkAccessIdentifier`\n\nNOTE1: the network operator might support only a subset of these options. The API consumer can provide multiple identifiers to be compatible across different network operators. In this case the identifiers MUST belong to the same device.\nNOTE2: as for this Commonalities release, we are enforcing that the networkAccessIdentifier is only part of the schema for future-proofing, and CAMARA does not currently allow its use. After the CAMARA meta-release work is concluded and the relevant issues are resolved, its use will need to be explicitly documented in the guidelines."
+              }
+            ]
+          }
+        },
+        "description": "Parameters to get QoS session information by device"
+      },
+      "Code": {
+        "title": "Code",
+        "enum": [
+          "INVALID_ARGUMENT",
+          "OUT_OF_RANGE",
+          "QUALITY_ON_DEMAND.DURATION_OUT_OF_RANGE",
+          "INVALID_CREDENTIAL",
+          "INVALID_TOKEN"
+        ],
+        "type": "string",
+        "description": "Code given to this error"
+      },
+      "Code1": {
+        "title": "Code1",
+        "enum": [
+          "NOT_FOUND",
+          "IDENTIFIER_NOT_FOUND"
+        ],
+        "type": "string",
+        "description": "Code given to this error"
+      },
+      "Code2": {
+        "title": "Code2",
+        "enum": [
+          "IDENTIFIER_MISMATCH",
+          "SERVICE_NOT_APPLICABLE",
+          "MISSING_IDENTIFIER",
+          "UNSUPPORTED_IDENTIFIER",
+          "UNNECESSARY_IDENTIFIER",
+          "QUALITY_ON_DEMAND.QOS_PROFILE_NOT_APPLICABLE"
+        ],
+        "type": "string",
+        "description": "Code given to this error"
+      },
+      "Code3": {
+        "title": "Code3",
+        "enum": [
+          "QUOTA_EXCEEDED",
+          "TOO_MANY_REQUESTS"
+        ],
+        "type": "string",
+        "description": "Code given to this error"
+      },
+      "Code4": {
+        "title": "Code4",
+        "enum": [
+          "INVALID_ARGUMENT",
+          "OUT_OF_RANGE"
+        ],
+        "type": "string",
+        "description": "Code given to this error"
+      },
+      "Code5": {
+        "title": "Code5",
+        "enum": [
+          "INVALID_ARGUMENT",
+          "OUT_OF_RANGE",
+          "QUALITY_ON_DEMAND.DURATION_OUT_OF_RANGE"
+        ],
+        "type": "string",
+        "description": "Code given to this error"
+      },
+      "Code6": {
+        "title": "Code6",
+        "enum": [
+          "IDENTIFIER_MISMATCH",
+          "SERVICE_NOT_APPLICABLE",
+          "MISSING_IDENTIFIER",
+          "UNSUPPORTED_IDENTIFIER",
+          "UNNECESSARY_IDENTIFIER"
+        ],
+        "type": "string",
+        "description": "Code given to this error"
+      },
+      "CreateSessionBadRequest4001": {
+        "title": "CreateSessionBadRequest4001",
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": 400,
+            "type": "integer",
+            "description": "HTTP status code returned along with this error response",
+            "contentEncoding": "int32"
+          },
+          "code": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Code"
+              },
+              {
+                "description": "Code given to this error"
+              }
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Detailed error description"
+          }
+        }
+      },
+      "CreateSessionUnprocessableEntity4221": {
+        "title": "CreateSessionUnprocessableEntity4221",
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": 422,
+            "type": "integer",
+            "description": "HTTP status code returned along with this error response",
+            "contentEncoding": "int32"
+          },
+          "code": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Code2"
+              },
+              {
+                "description": "Code given to this error"
+              }
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Detailed error description"
+          }
+        }
+      },
+      "Data": {
+        "title": "Data",
+        "required": [
+          "sessionId",
+          "qosStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session ID in UUID format",
+            "contentEncoding": "uuid"
+          },
+          "qosStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventQosStatus"
+              },
+              {
+                "description": "The current status of a requested or previously available session. Applicable values in the event are:\n*  `AVAILABLE` - The requested QoS has been provided by the network.\n*  `UNAVAILABLE` - A requested or previously available QoS session is now unavailable. `statusInfo` may provide additional information about the reason for the unavailability."
+              }
+            ]
+          },
+          "statusInfo": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StatusInfo"
+              },
+              {
+                "description": "Reason for the new `qosStatus`. Currently `statusInfo` is only applicable when `qosStatus` is 'UNAVAILABLE'.\n* `DURATION_EXPIRED` - Session terminated due to requested duration expired\n* `NETWORK_TERMINATED` - Network terminated the session before the requested duration expired\n* `DELETE_REQUESTED`- User requested the deletion of the session before the requested duration expired"
+              }
+            ]
+          }
+        },
+        "description": "Event details depending on the event type"
+      },
+      "Datacontenttype": {
+        "title": "Datacontenttype",
+        "const": "application/json",
+        "type": "string",
+        "description": "media-type that describes the event payload encoding, must be \"application/json\" for CAMARA APIs"
+      },
+      "DeviceIpv4Addr1": {
+        "title": "DeviceIpv4Addr1",
+        "required": [
+          "publicAddress",
+          "publicPort"
+        ],
+        "type": "object",
+        "properties": {
+          "publicAddress": {
+            "type": "string",
+            "description": "A single IPv4 address with no subnet mask",
+            "examples": [
+              "203.0.113.0"
+            ]
+          },
+          "privateAddress": {
+            "type": "string",
+            "description": "A single IPv4 address with no subnet mask",
+            "examples": [
+              "203.0.113.0"
+            ]
+          },
+          "publicPort": {
+            "maximum": 65535.0,
+            "minimum": 0.0,
+            "type": "integer",
+            "description": "TCP or UDP port number",
+            "contentEncoding": "int32"
+          }
+        }
+      },
+      "DeviceIpv4Addr2": {
+        "title": "DeviceIpv4Addr2",
+        "type": "object",
+        "properties": {
+          "publicAddress": {
+            "type": "string",
+            "description": "A single IPv4 address with no subnet mask",
+            "examples": [
+              "203.0.113.0"
+            ]
+          },
+          "privateAddress": {
+            "type": "string",
+            "description": "A single IPv4 address with no subnet mask",
+            "examples": [
+              "203.0.113.0"
+            ]
+          },
+          "publicPort": {
+            "maximum": 65535.0,
+            "minimum": 0.0,
+            "type": "integer",
+            "description": "TCP or UDP port number",
+            "contentEncoding": "int32"
+          }
+        },
+        "description": "The device should be identified by either the public (observed) IP address and port as seen by the application server, or the private (local) and any public (observed) IP addresses in use by the device (this information can be obtained by various means, for example from some DNS servers).\n\nIf the allocated and observed IP addresses are the same (i.e. NAT is not in use) then  the same address should be specified for both publicAddress and privateAddress.\n\nIf NAT64 is in use, the device should be identified by its publicAddress and publicPort, or separately by its allocated IPv6 address (field ipv6Address of the Device object)\n\nIn all cases, publicAddress must be specified, along with at least one of either privateAddress or publicPort, dependent upon which is known. In general, mobile devices cannot be identified by their public IPv4 address alone.",
+        "examples": [
+          {
+            "publicAddress": "203.0.113.0",
+            "publicPort": 59765
+          }
+        ]
+      },
+      "Generic4001": {
+        "title": "Generic4001",
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": 400,
+            "type": "integer",
+            "description": "HTTP status code returned along with this error response",
+            "contentEncoding": "int32"
+          },
+          "code": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Code4"
+              },
+              {
+                "description": "Code given to this error"
+              }
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Detailed error description"
+          }
+        }
+      },
+      "Generic4011": {
+        "title": "Generic4011",
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": 401,
+            "type": "integer",
+            "description": "HTTP status code returned along with this error response",
+            "contentEncoding": "int32"
+          },
+          "code": {
+            "const": "UNAUTHENTICATED",
+            "type": "string",
+            "description": "Code given to this error"
+          },
+          "message": {
+            "type": "string",
+            "description": "Detailed error description"
+          }
+        }
+      },
+      "Generic4221": {
+        "title": "Generic4221",
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": 422,
+            "type": "integer",
+            "description": "HTTP status code returned along with this error response",
+            "contentEncoding": "int32"
+          },
+          "code": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Code6"
+              },
+              {
+                "description": "Code given to this error"
+              }
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Detailed error description"
+          }
+        }
+      },
+      "Generic4291": {
+        "title": "Generic4291",
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": 429,
+            "type": "integer",
+            "description": "HTTP status code returned along with this error response",
+            "contentEncoding": "int32"
+          },
+          "code": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Code3"
+              },
+              {
+                "description": "Code given to this error"
+              }
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Detailed error description"
+          }
+        }
+      },
+      "GenericDevice4041": {
+        "title": "GenericDevice4041",
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": 404,
+            "type": "integer",
+            "description": "HTTP status code returned along with this error response",
+            "contentEncoding": "int32"
+          },
+          "code": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Code1"
+              },
+              {
+                "description": "Code given to this error"
+              }
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Detailed error description"
+          }
+        }
+      },
+      "GenericExtendSessionDuration4001": {
+        "title": "GenericExtendSessionDuration4001",
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": 400,
+            "type": "integer",
+            "description": "HTTP status code returned along with this error response",
+            "contentEncoding": "int32"
+          },
+          "code": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Code5"
+              },
+              {
+                "description": "Code given to this error"
+              }
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Detailed error description"
+          }
+        }
+      },
+      "Range": {
+        "title": "Range",
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "from": {
+            "maximum": 65535.0,
+            "minimum": 0.0,
+            "type": "integer",
+            "description": "TCP or UDP port number",
+            "contentEncoding": "int32"
+          },
+          "to": {
+            "maximum": 65535.0,
+            "minimum": 0.0,
+            "type": "integer",
+            "description": "TCP or UDP port number",
+            "contentEncoding": "int32"
+          }
+        }
+      },
+      "SessionInConflict4091": {
+        "title": "SessionInConflict4091",
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": 409,
+            "type": "integer",
+            "description": "HTTP status code returned along with this error response",
+            "contentEncoding": "int32"
+          },
+          "code": {
+            "const": "CONFLICT",
+            "type": "string",
+            "description": "Code given to this error"
+          },
+          "message": {
+            "type": "string",
+            "description": "Detailed error description"
+          }
+        }
+      },
+      "SessionStatusConflict4091": {
+        "title": "SessionStatusConflict4091",
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": 409,
+            "type": "integer",
+            "description": "HTTP status code returned along with this error response",
+            "contentEncoding": "int32"
+          },
+          "code": {
+            "const": "QUALITY_ON_DEMAND.SESSION_EXTENSION_NOT_ALLOWED",
+            "type": "string",
+            "description": "Code given to this error"
+          },
+          "message": {
+            "type": "string",
+            "description": "Detailed error description"
+          }
+        }
+      },
+      "DeviceIpv4Addr3": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/DeviceIpv4Addr"
+          },
+          {
+            "$ref": "#/components/schemas/DeviceIpv4Addr1"
+          }
+        ],
+        "description": "The device should be identified by either the public (observed) IP address and port as seen by the application server, or the private (local) and any public (observed) IP addresses in use by the device (this information can be obtained by various means, for example from some DNS servers).\n\nIf the allocated and observed IP addresses are the same (i.e. NAT is not in use) then  the same address should be specified for both publicAddress and privateAddress.\n\nIf NAT64 is in use, the device should be identified by its publicAddress and publicPort, or separately by its allocated IPv6 address (field ipv6Address of the Device object)\n\nIn all cases, publicAddress must be specified, along with at least one of either privateAddress or publicPort, dependent upon which is known. In general, mobile devices cannot be identified by their public IPv4 address alone.",
+        "examples": [
+          {
+            "publicAddress": "203.0.113.0",
+            "publicPort": 59765
+          }
+        ]
+      }
+    },
+    "securitySchemes": {
+      "openId": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "notificationsBearerAuth": {
+        "type": "http",
+        "description": "Bearer authentication for notifications",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "security": [],
+  "tags": [
+    {
+      "name": "QoS Sessions",
+      "description": "Manage QoS sessions"
+    }
+  ],
+  "externalDocs": {
+    "description": "Project documentation at Camara",
+    "url": "https://github.com/camaraproject/QualityOnDemand"
+  }
+}
