@@ -5,7 +5,7 @@ import paramiko
 from stat import S_ISDIR
 
 SFTP_HOST = os.environ["SFTP_HOST"]
-SFTP_PORT = int(os.getenv("SFTP_PORT", 22))
+SFTP_PORT = int(os.environ.get("SFTP_PORT") or 2222)
 SFTP_USERNAME = os.environ["SFTP_USERNAME"]
 SFTP_KEY_PATH = os.environ["SFTP_KEY_PATH"]
 LOCAL_DIR = "api-portal/static"
