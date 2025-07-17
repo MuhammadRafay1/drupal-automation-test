@@ -1,23 +1,35 @@
-name: Deploy Static Assets to Pantheon
+name: Deploy Static Files to Pantheon
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+    env:
+      SFTP_HOST: ${{ secrets.SFTP_HOST }}
+      SFTP_PORT: ${{ secrets.SFTP_PORT }}
+      SFTP_USERNAME: ${{ secrets.SFTP_USERNAME }}
+      SFTP_KEY_PATH: /tmp/id_rsa
 
-      - name: Upload Static Folder via SFTP
-        uses: picodebr/copy-action@v1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          ssh_key: ${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}
-          ssh_user: ${{ secrets.PANTHEON_SFTP_USERNAME }}     # e.g. dev.yoursite
-          ssh_host: ${{ secrets.PANTHEON_SFTP_HOST }}         # e.g. appserver.dev-site.pantheon.io
-          source: ./api-portal/static/
-          destination: /code/web/sites/default/files/static
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: pip install paramiko
+
+      - name: Add SSH Private Key
+        run: |
+          echo "${{ secrets.SFTP_PRIVATE_KEY }}" > /tmp/id_rsa
+          chmod 600 /tmp/id_rsa
+
+      - name: Upload files via SFTP
+        run: python script.py
