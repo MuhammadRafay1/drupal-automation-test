@@ -9,9 +9,9 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      SFTP_HOST: ${{ secrets.SFTP_HOST }}
-      SFTP_PORT: ${{ secrets.SFTP_PORT }}
-      SFTP_USERNAME: ${{ secrets.SFTP_USERNAME }}
+      SFTP_HOST: ${{ secrets.PANTHEON_SFTP_HOST }}
+      SFTP_PORT: ${{ secrets.PANTHEON_SFTP_PORT }}
+      SFTP_USERNAME: ${{ secrets.PANTHEON_SFTP_USERNAME }}
       SFTP_KEY_PATH: /tmp/id_rsa
 
     steps:
@@ -28,7 +28,7 @@ jobs:
 
       - name: Add SSH Private Key
         run: |
-          echo "${{ secrets.SFTP_PRIVATE_KEY }}" > /tmp/id_rsa
+          echo "${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}" > /tmp/id_rsa
           chmod 600 /tmp/id_rsa
 
       - name: Upload files via SFTP
