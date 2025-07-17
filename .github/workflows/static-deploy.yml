@@ -3,25 +3,21 @@ name: Deploy Static Assets to Pantheon
 on:
   push:
     branches:
-      - main  # You can change this to any branch you want to trigger deployment from
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout code from GitHub repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Step 2: Deploy files using picodebr/copy-action via SFTP
-      - name: Upload Static Files to Pantheon
+      - name: Upload Static Folder via SFTP
         uses: picodebr/copy-action@v1
         with:
-          host: ${{ secrets.PANTHEON_SFTP_HOST }}            # e.g. appserver.dev-xyz.pantheon.io
-          port: ${{ secrets.PANTHEON_SFTP_PORT }}            # usually 22
-          username: ${{ secrets.PANTHEON_SFTP_USERNAME }}    # e.g. dev.yoursitename
-          key: ${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}      # your RSA private key
-          source: ./api-portal/static                         # local source folder
-          target: /code/web/sites/default/files/static        # target folder in Pantheon
-          overwrite: true                                     # replace existing files
+          ssh_key: ${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}
+          ssh_user: ${{ secrets.PANTHEON_SFTP_USERNAME }}     # e.g. dev.yoursite
+          ssh_host: ${{ secrets.PANTHEON_SFTP_HOST }}         # e.g. appserver.dev-site.pantheon.io
+          source: ./api-portal/static/
+          destination: /code/web/sites/default/files/static
