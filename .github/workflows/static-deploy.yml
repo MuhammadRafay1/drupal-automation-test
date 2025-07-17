@@ -1,34 +1,27 @@
-name: Upload Static Files to Pantheon
+name: Deploy Static Assets to Pantheon
 
 on:
   push:
     branches:
-      - main
+      - main  # You can change this to any branch you want to trigger deployment from
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      # Step 1: Checkout code from GitHub repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install lftp
-        run: sudo apt-get update && sudo apt-get install -y lftp
-
-      - name: Write RSA private key
-        run: |
-          echo "${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}" > /tmp/private_key
-          chmod 600 /tmp/private_key
-
-      - name: Upload static files via lftp
-        run: |
-          echo "${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}" > /tmp/private_key
-          chmod 600 /tmp/private_key
-
-          lftp -u ${{ secrets.PANTHEON_SFTP_USERNAME }}, -e "
-            set sftp:connect-program 'ssh -a -x -i /tmp/private_key -o StrictHostKeyChecking=no -p ${{ secrets.PANTHEON_SFTP_PORT }}'
-            mirror -R api-portal/static /code/web/sites/default/files/static
-            quit
-          " sftp://${{ secrets.PANTHEON_SFTP_HOST }}
-
+      # Step 2: Deploy files using picodebr/copy-action via SFTP
+      - name: Upload Static Files to Pantheon
+        uses: picodebr/copy-action@v1
+        with:
+          host: ${{ secrets.PANTHEON_SFTP_HOST }}            # e.g. appserver.dev-xyz.pantheon.io
+          port: ${{ secrets.PANTHEON_SFTP_PORT }}            # usually 22
+          username: ${{ secrets.PANTHEON_SFTP_USERNAME }}    # e.g. dev.yoursitename
+          key: ${{ secrets.PANTHEON_SFTP_PRIVATE_KEY }}      # your RSA private key
+          source: ./api-portal/static                         # local source folder
+          target: /code/web/sites/default/files/static        # target folder in Pantheon
+          overwrite: true                                     # replace existing files
